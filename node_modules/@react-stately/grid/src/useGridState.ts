@@ -1,0 +1,62 @@
+import {GridCollection} from '@react-types/grid';
+import {Key, useEffect, useMemo} from 'react';
+import {MultipleSelectionStateProps, SelectionManager, useMultipleSelectionState} from '@react-stately/selection';
+
+export interface GridState<T, C extends GridCollection<T>> {
+  collection: C,
+  /** A set of keys for rows that are disabled. */
+  disabledKeys: Set<Key>,
+  /** A selection manager to read and update row selection state. */
+  selectionManager: SelectionManager,
+  /** Whether keyboard navigation is disabled, such as when the arrow keys should be handled by a component within a cell. */
+  isKeyboardNavigationDisabled: boolean
+}
+
+export interface GridStateOptions<T, C extends GridCollection<T>> extends MultipleSelectionStateProps {
+  collection: C,
+  disabledKeys?: Iterable<Key>,
+  focusMode?: 'row' | 'cell'
+}
+
+/**
+ * Provides state management for a grid component. Handles row selection and focusing a grid cell's focusable child if applicable.
+ */
+export function useGridState<T extends object, C extends GridCollection<T>>(props: GridStateOptions<T, C>): GridState<T, C> {
+  let {collection, focusMode} = props;
+  let selectionState = useMultipleSelectionState(props);
+  let disabledKeys = useMemo(() =>
+      props.disabledKeys ? new Set(props.disabledKeys) : new Set<Key>()
+    , [props.disabledKeys]);
+
+  let setFocusedKey = selectionState.setFocusedKey;
+  selectionState.setFocusedKey = (key, child) => {
+    // If focusMode is cell and an item is focused, focus a child cell instead.
+    if (focusMode === 'cell' && key != null) {
+      let item = collection.getItem(key);
+      if (item?.type === 'item') {
+        let children = [...item.childNodes];
+        if (child === 'last') {
+          key = children[children.length - 1]?.key;
+        } else {
+          key = children[0]?.key;
+        }
+      }
+    }
+
+    setFocusedKey(key, child);
+  };
+
+  // Reset focused key if that item is deleted from the collection.
+  useEffect(() => {
+    if (selectionState.focusedKey != null && !collection.getItem(selectionState.focusedKey)) {
+      selectionState.setFocusedKey(null);
+    }
+  }, [collection, selectionState]);
+
+  return {
+    collection,
+    disabledKeys,
+    isKeyboardNavigationDisabled: false,
+    selectionManager: new SelectionManager(collection, selectionState)
+  };
+}
