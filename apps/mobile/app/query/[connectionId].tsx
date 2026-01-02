@@ -1091,20 +1091,23 @@ export default function QueryScreen() {
       <Modal
         visible={showHistory}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowHistory(false)}
       >
-        <View style={styles.historyModal}>
-          <View style={styles.historyModalContent}>
-            <View style={styles.historyModalHeader}>
-              <Text style={styles.historyModalTitle}>Query History</Text>
-              <Pressable onPress={() => setShowHistory(false)}>
-                <Text style={styles.historyCloseText}>Close</Text>
+        <Pressable 
+          style={styles.dialogOverlay} 
+          onPress={() => setShowHistory(false)}
+        >
+          <Pressable style={styles.dialogContainer} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.dialogHeader}>
+              <Text style={styles.dialogTitle}>Query History</Text>
+              <Pressable onPress={() => setShowHistory(false)} hitSlop={8}>
+                <Text style={styles.dialogCloseText}>✕</Text>
               </Pressable>
             </View>
-            <ScrollView style={styles.historyList}>
+            <ScrollView style={styles.dialogList} contentContainerStyle={styles.dialogListContent}>
               {history.length === 0 ? (
-                <Text style={styles.historyEmpty}>No query history yet</Text>
+                <Text style={styles.dialogEmpty}>No query history yet</Text>
               ) : (
                 history.map((item) => (
                   <Pressable
@@ -1127,33 +1130,36 @@ export default function QueryScreen() {
                 ))
               )}
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal
         visible={showSnippets}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowSnippets(false)}
       >
-        <View style={styles.snippetsModal}>
-          <View style={styles.snippetsModalContent}>
-            <View style={styles.snippetsModalHeader}>
-              <Text style={styles.snippetsModalTitle}>Saved Snippets</Text>
-              <View style={styles.snippetsHeaderActions}>
-                <Pressable onPress={handleSaveSnippet}>
-                  <Text style={styles.snippetsSaveText}>Save Current</Text>
+        <Pressable 
+          style={styles.dialogOverlay} 
+          onPress={() => setShowSnippets(false)}
+        >
+          <Pressable style={styles.dialogContainer} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.dialogHeader}>
+              <Text style={styles.dialogTitle}>Saved Snippets</Text>
+              <View style={styles.dialogHeaderActions}>
+                <Pressable onPress={handleSaveSnippet} hitSlop={8}>
+                  <Text style={styles.dialogSaveText}>+ Save</Text>
                 </Pressable>
-                <Pressable onPress={() => setShowSnippets(false)}>
-                  <Text style={styles.snippetsCloseText}>Close</Text>
+                <Pressable onPress={() => setShowSnippets(false)} hitSlop={8}>
+                  <Text style={styles.dialogCloseText}>✕</Text>
                 </Pressable>
               </View>
             </View>
-            <ScrollView style={styles.snippetsList}>
+            <ScrollView style={styles.dialogList} contentContainerStyle={styles.dialogListContent}>
               {snippets.length === 0 ? (
-                <Text style={styles.snippetsEmpty}>
-                  No snippets yet. Tap "Save Current" to save your query.
+                <Text style={styles.dialogEmpty}>
+                  No snippets yet. Tap "+ Save" to save your query.
                 </Text>
               ) : (
                 snippets.map((snippet) => (
@@ -1171,8 +1177,8 @@ export default function QueryScreen() {
                 ))
               )}
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal
@@ -1406,19 +1412,26 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  historyModal: {
+  dialogOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
   },
-  historyModalContent: {
+  dialogContainer: {
     backgroundColor: theme.colors.background,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    minHeight: 300,
-    maxHeight: '70%',
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  historyModalHeader: {
+  dialogHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1426,20 +1439,34 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
-  historyModalTitle: {
+  dialogTitle: {
     color: theme.colors.text,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
   },
-  historyCloseText: {
-    color: theme.colors.primary,
+  dialogHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  dialogCloseText: {
+    color: theme.colors.textMuted,
+    fontSize: 18,
+    fontWeight: '400',
+  },
+  dialogSaveText: {
+    color: theme.colors.success,
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  historyList: {
-    flex: 1,
+  dialogList: {
+    flexGrow: 0,
+    flexShrink: 1,
   },
-  historyEmpty: {
+  dialogListContent: {
+    paddingBottom: 8,
+  },
+  dialogEmpty: {
     color: theme.colors.textMuted,
     textAlign: 'center',
     padding: 32,
@@ -1478,54 +1505,6 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     color: theme.colors.text,
     fontSize: 12,
     fontWeight: '500',
-  },
-  snippetsModal: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  snippetsModalContent: {
-    backgroundColor: theme.colors.background,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    minHeight: 300,
-    maxHeight: '70%',
-  },
-  snippetsModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  snippetsModalTitle: {
-    color: theme.colors.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  snippetsHeaderActions: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  snippetsSaveText: {
-    color: theme.colors.success,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  snippetsCloseText: {
-    color: theme.colors.primary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  snippetsList: {
-    flex: 1,
-  },
-  snippetsEmpty: {
-    color: theme.colors.textMuted,
-    textAlign: 'center',
-    padding: 32,
-    fontSize: 14,
   },
   snippetItem: {
     padding: 14,
