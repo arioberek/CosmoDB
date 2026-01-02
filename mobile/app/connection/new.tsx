@@ -1,6 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
+import * as DocumentPicker from "expo-document-picker";
 import { router } from "expo-router";
-import { useState } from "react";
+import type { FC } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -13,16 +15,42 @@ import {
   TextInput,
   View,
 } from "react-native";
+import type { SvgProps } from "react-native-svg";
 import {
   generateConnectionId,
   saveConnection,
 } from "../../lib/storage/connections";
 import type { ConnectionConfig, DatabaseType } from "../../lib/types";
+import { useTheme } from "../../hooks/useTheme";
+import type { Theme } from "../../lib/theme";
+import PostgresqlIcon from "../../assets/icons/postgresql.svg";
+import MysqlIcon from "../../assets/icons/mysql.svg";
+import MariadbIcon from "../../assets/icons/mariadb.svg";
+import SqliteIcon from "../../assets/icons/sqlite.svg";
+import CockroachdbIcon from "../../assets/icons/cockroachdb.svg";
+import MongodbIcon from "../../assets/icons/mongodb.svg";
 
 const DEFAULT_PORTS: Record<DatabaseType, number> = {
   postgres: 5432,
   mysql: 3306,
+  mariadb: 3306,
+  sqlite: 0,
+  cockroachdb: 26257,
+  mongodb: 27017,
 };
+
+const DATABASE_OPTIONS: Array<{
+  type: DatabaseType;
+  label: string;
+  Icon: FC<SvgProps>;
+}> = [
+  { type: "postgres", label: "PostgreSQL", Icon: PostgresqlIcon },
+  { type: "mysql", label: "MySQL", Icon: MysqlIcon },
+  { type: "mariadb", label: "MariaDB", Icon: MariadbIcon },
+  { type: "sqlite", label: "SQLite", Icon: SqliteIcon },
+  { type: "cockroachdb", label: "CockroachDB", Icon: CockroachdbIcon },
+  { type: "mongodb", label: "MongoDB", Icon: MongodbIcon },
+];
 
 type ParsedConnectionUrl = {
   type?: DatabaseType;
@@ -38,6 +66,13 @@ const URL_PROTOCOL_TO_TYPE: Record<string, DatabaseType> = {
   postgres: "postgres",
   postgresql: "postgres",
   mysql: "mysql",
+  mariadb: "mariadb",
+  sqlite: "sqlite",
+  file: "sqlite",
+  cockroachdb: "cockroachdb",
+  crdb: "cockroachdb",
+  mongodb: "mongodb",
+  "mongodb+srv": "mongodb",
 };
 
 const parseSslValue = (value: string | null): boolean | undefined => {
@@ -99,7 +134,26 @@ const parseConnectionUrl = (
   };
 };
 
+const isSqlite = (dbType: DatabaseType) => dbType === "sqlite";
+
+const pickDatabaseFile = async (): Promise<string | null> => {
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ["application/x-sqlite3", "application/octet-stream", "*/*"],
+      copyToCacheDirectory: false,
+    });
+    if (result.canceled || result.assets.length === 0) {
+      return null;
+    }
+    return result.assets[0].uri;
+  } catch {
+    return null;
+  }
+};
+
 export default function NewConnectionScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
 
@@ -115,7 +169,8 @@ export default function NewConnectionScreen() {
 
   const handleTypeChange = (newType: DatabaseType) => {
     setType(newType);
-    setPort(DEFAULT_PORTS[newType].toString());
+    const newPort = DEFAULT_PORTS[newType];
+    setPort(newPort > 0 ? newPort.toString() : "");
   };
 
   const handleUrlChange = (value: string) => {
@@ -128,7 +183,8 @@ export default function NewConnectionScreen() {
       if (parsed.port !== undefined) {
         setPort(parsed.port.toString());
       } else {
-        setPort(DEFAULT_PORTS[parsed.type].toString());
+        const newPort = DEFAULT_PORTS[parsed.type];
+        setPort(newPort > 0 ? newPort.toString() : "");
       }
     } else if (parsed.port !== undefined) {
       setPort(parsed.port.toString());
@@ -146,16 +202,25 @@ export default function NewConnectionScreen() {
       Alert.alert("Error", "Connection name is required");
       return;
     }
-    if (!host.trim()) {
-      Alert.alert("Error", "Host is required");
-      return;
+
+    if (!isSqlite(type)) {
+      if (!host.trim()) {
+        Alert.alert("Error", "Host is required");
+        return;
+      }
+      if (!username.trim()) {
+        Alert.alert("Error", "Username is required");
+        return;
+      }
     }
+
     if (!database.trim()) {
-      Alert.alert("Error", "Database name is required");
-      return;
-    }
-    if (!username.trim()) {
-      Alert.alert("Error", "Username is required");
+      Alert.alert(
+        "Error",
+        isSqlite(type)
+          ? "Database file path is required"
+          : "Database name is required"
+      );
       return;
     }
 
@@ -166,12 +231,12 @@ export default function NewConnectionScreen() {
         id: generateConnectionId(),
         name: name.trim(),
         type,
-        host: host.trim(),
-        port: parseInt(port, 10) || DEFAULT_PORTS[type],
+        host: isSqlite(type) ? "" : host.trim(),
+        port: isSqlite(type) ? 0 : parseInt(port, 10) || DEFAULT_PORTS[type],
         database: database.trim(),
-        username: username.trim(),
-        password,
-        ssl,
+        username: isSqlite(type) ? "" : username.trim(),
+        password: isSqlite(type) ? "" : password,
+        ssl: isSqlite(type) ? false : ssl,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -207,135 +272,151 @@ export default function NewConnectionScreen() {
             value={name}
             onChangeText={setName}
             placeholder="My Database"
-            placeholderTextColor="#666"
+            placeholderTextColor={theme.colors.placeholder}
           />
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Connection URL</Text>
-          <TextInput
-            style={styles.input}
-            value={connectionUrl}
-            onChangeText={handleUrlChange}
-            placeholder="postgres://user:pass@host:5432/db?sslmode=require"
-            placeholderTextColor="#666"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </View>
+        {!isSqlite(type) && (
+          <View style={styles.section}>
+            <Text style={styles.label}>Connection URL</Text>
+            <TextInput
+              style={styles.input}
+              value={connectionUrl}
+              onChangeText={handleUrlChange}
+              placeholder="postgres://user:pass@host:5432/db?sslmode=require"
+              placeholderTextColor={theme.colors.placeholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.label}>Database Type</Text>
-          <View style={styles.typeSelector}>
-            <Pressable
-              style={[
-                styles.typeButton,
-                type === "postgres" && styles.typeButtonActive,
-              ]}
-              onPress={() => handleTypeChange("postgres")}
-            >
-              <Text style={styles.typeEmoji}>🐘</Text>
-              <Text
+          <View style={styles.typeGrid}>
+            {DATABASE_OPTIONS.map((option) => (
+              <Pressable
+                key={option.type}
                 style={[
-                  styles.typeText,
-                  type === "postgres" && styles.typeTextActive,
+                  styles.typeButton,
+                  type === option.type && styles.typeButtonActive,
                 ]}
+                onPress={() => handleTypeChange(option.type)}
               >
-                PostgreSQL
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.typeButton,
-                type === "mysql" && styles.typeButtonActive,
-              ]}
-              onPress={() => handleTypeChange("mysql")}
-            >
-              <Text style={styles.typeEmoji}>🐬</Text>
-              <Text
-                style={[
-                  styles.typeText,
-                  type === "mysql" && styles.typeTextActive,
-                ]}
-              >
-                MySQL
-              </Text>
-            </Pressable>
+                <View style={styles.typeIconContainer}>
+                  <option.Icon width={24} height={24} fill={theme.colors.text} />
+                </View>
+                <Text
+                  style={[
+                    styles.typeText,
+                    type === option.type && styles.typeTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Host</Text>
-          <TextInput
-            style={styles.input}
-            value={host}
-            onChangeText={setHost}
-            placeholder="localhost"
-            placeholderTextColor="#666"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </View>
+        {!isSqlite(type) && (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.label}>Host</Text>
+              <TextInput
+              style={styles.input}
+              value={host}
+              onChangeText={setHost}
+              placeholder="localhost"
+              placeholderTextColor={theme.colors.placeholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>Port</Text>
+              <TextInput
+              style={styles.input}
+              value={port}
+              onChangeText={setPort}
+              placeholder={DEFAULT_PORTS[type].toString()}
+              placeholderTextColor={theme.colors.placeholder}
+              keyboardType="number-pad"
+            />
+          </View>
+          </>
+        )}
 
         <View style={styles.section}>
-          <Text style={styles.label}>Port</Text>
-          <TextInput
-            style={styles.input}
-            value={port}
-            onChangeText={setPort}
-            placeholder={DEFAULT_PORTS[type].toString()}
-            placeholderTextColor="#666"
-            keyboardType="number-pad"
-          />
+          <Text style={styles.label}>
+            {isSqlite(type) ? "Database File" : "Database"}
+          </Text>
+          <View style={isSqlite(type) ? styles.inputRow : undefined}>
+            <TextInput
+              style={[styles.input, isSqlite(type) && styles.inputFlex]}
+              value={database}
+              onChangeText={setDatabase}
+              placeholder={isSqlite(type) ? "local.db" : "mydb"}
+              placeholderTextColor={theme.colors.placeholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {isSqlite(type) && (
+              <Pressable
+                style={styles.browseButton}
+                onPress={async () => {
+                  const uri = await pickDatabaseFile();
+                  if (uri) setDatabase(uri);
+                }}
+              >
+                <Text style={styles.browseButtonText}>Browse</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Database</Text>
-          <TextInput
-            style={styles.input}
-            value={database}
-            onChangeText={setDatabase}
-            placeholder="mydb"
-            placeholderTextColor="#666"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </View>
+        {!isSqlite(type) && (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+              style={styles.input}
+              value={username}
+              onChangeText={setUsername}
+              placeholder={type === "mongodb" ? "admin" : "postgres"}
+              placeholderTextColor={theme.colors.placeholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Username</Text>
-          <TextInput
-            style={styles.input}
-            value={username}
-            onChangeText={setUsername}
-            placeholder="postgres"
-            placeholderTextColor="#666"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </View>
+            <View style={styles.section}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              placeholderTextColor={theme.colors.placeholder}
+              secureTextEntry
+            />
+          </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            placeholderTextColor="#666"
-            secureTextEntry
-          />
-        </View>
-
-        <View style={styles.switchSection}>
-          <Text style={styles.label}>Use SSL/TLS</Text>
-          <Switch
-            value={ssl}
-            onValueChange={setSsl}
-            trackColor={{ false: "#333", true: "#4f46e5" }}
-            thumbColor="#fff"
-          />
-        </View>
+          <View style={styles.switchSection}>
+            <Text style={styles.label}>Use SSL/TLS</Text>
+            <Switch
+              value={ssl}
+              onValueChange={setSsl}
+              trackColor={{
+                false: theme.colors.surfaceMuted,
+                true: theme.colors.primary,
+              }}
+              thumbColor="#fff"
+            />
+          </View>
+          </>
+        )}
 
         <Pressable
           style={[styles.saveButton, saving && styles.saveButtonDisabled]}
@@ -351,10 +432,10 @@ export default function NewConnectionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#16213e",
+    backgroundColor: theme.colors.background,
   },
   scrollView: {
     flex: 1,
@@ -367,44 +448,63 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   label: {
-    color: "#ccc",
+    color: theme.colors.textMuted,
     fontSize: 14,
     fontWeight: "500",
   },
   input: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: theme.colors.surface,
     borderRadius: 8,
     padding: 12,
-    color: "#fff",
+    color: theme.colors.text,
     fontSize: 16,
   },
-  typeSelector: {
+  inputRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: 8,
+  },
+  inputFlex: {
+    flex: 1,
+  },
+  browseButton: {
+    backgroundColor: theme.colors.surfaceMuted,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    justifyContent: "center",
+  },
+  browseButtonText: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  typeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
   typeButton: {
-    flex: 1,
-    backgroundColor: "#1a1a2e",
+    width: "31%",
+    backgroundColor: theme.colors.surface,
     borderRadius: 8,
-    padding: 16,
+    padding: 12,
     alignItems: "center",
     borderWidth: 2,
     borderColor: "transparent",
   },
   typeButtonActive: {
-    borderColor: "#4f46e5",
+    borderColor: theme.colors.primary,
   },
-  typeEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
+  typeIconContainer: {
+    marginBottom: 4,
   },
   typeText: {
-    color: "#888",
-    fontSize: 14,
+    color: theme.colors.textSubtle,
+    fontSize: 11,
     fontWeight: "500",
+    textAlign: "center",
   },
   typeTextActive: {
-    color: "#fff",
+    color: theme.colors.text,
   },
   switchSection: {
     flexDirection: "row",
@@ -412,7 +512,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveButton: {
-    backgroundColor: "#4f46e5",
+    backgroundColor: theme.colors.primary,
     padding: 16,
     borderRadius: 8,
     alignItems: "center",

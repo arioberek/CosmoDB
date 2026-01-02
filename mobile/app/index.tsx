@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, router } from "expo-router";
+import { Link, Stack, router } from "expo-router";
 import {
   FlatList,
   Pressable,
@@ -7,17 +7,26 @@ import {
   Text,
   View,
 } from "react-native";
+import { useMemo } from "react";
 import { getConnections } from "../lib/storage/connections";
 import type { ConnectionConfig } from "../lib/types";
 import { useConnectionStore } from "../stores/connection";
+import { useTheme } from "../hooks/useTheme";
+import type { Theme } from "../lib/theme";
+import { DatabaseIcon } from "../components/database-icon";
 
-const DatabaseIcon = ({ type }: { type: string }) => {
-  const icon = type === "postgres" ? "🐘" : "🐬";
-  return <Text style={styles.icon}>{icon}</Text>;
-};
+type HomeStyles = ReturnType<typeof createStyles>;
 
-const ConnectionItem = ({ connection }: { connection: ConnectionConfig }) => {
-  const { activeConnections, connect } = useConnectionStore();
+const ConnectionItem = ({
+  connection,
+  styles,
+  theme,
+}: {
+  connection: ConnectionConfig;
+  styles: HomeStyles;
+  theme: Theme;
+}) => {
+  const { activeConnections } = useConnectionStore();
   const activeConnection = activeConnections.get(connection.id);
   const isConnected = activeConnection?.state.status === "connected";
 
@@ -37,7 +46,7 @@ const ConnectionItem = ({ connection }: { connection: ConnectionConfig }) => {
       ]}
       onPress={handlePress}
     >
-      <DatabaseIcon type={connection.type} />
+      <DatabaseIcon type={connection.type} size={32} color={theme.colors.text} />
       <View style={styles.connectionInfo}>
         <Text style={styles.connectionName}>{connection.name}</Text>
         <Text style={styles.connectionDetails}>
@@ -55,6 +64,8 @@ const ConnectionItem = ({ connection }: { connection: ConnectionConfig }) => {
 };
 
 export default function HomeScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { data: connections = [], isLoading } = useQuery({
     queryKey: ["connections"],
     queryFn: getConnections,
@@ -62,6 +73,21 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push("/settings")}
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed && styles.headerButtonPressed,
+              ]}
+            >
+              <Text style={styles.headerButtonText}>⚙️</Text>
+            </Pressable>
+          ),
+        }}
+      />
       {connections.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🗄️</Text>
@@ -80,7 +106,9 @@ export default function HomeScreen() {
           <FlatList
             data={connections}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <ConnectionItem connection={item} />}
+            renderItem={({ item }) => (
+              <ConnectionItem connection={item} styles={styles} theme={theme} />
+            )}
             contentContainerStyle={styles.list}
           />
           <Link href="/connection/new" asChild>
@@ -94,10 +122,10 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#16213e",
+    backgroundColor: theme.colors.background,
   },
   list: {
     padding: 16,
@@ -106,7 +134,7 @@ const styles = StyleSheet.create({
   connectionItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a1a2e",
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     padding: 16,
     gap: 12,
@@ -114,19 +142,16 @@ const styles = StyleSheet.create({
   connectionItemPressed: {
     opacity: 0.8,
   },
-  icon: {
-    fontSize: 32,
-  },
   connectionInfo: {
     flex: 1,
   },
   connectionName: {
-    color: "#fff",
+    color: theme.colors.text,
     fontSize: 16,
     fontWeight: "600",
   },
   connectionDetails: {
-    color: "#888",
+    color: theme.colors.textSubtle,
     fontSize: 12,
     marginTop: 4,
   },
@@ -136,10 +161,10 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   statusConnected: {
-    backgroundColor: "#4ade80",
+    backgroundColor: theme.colors.success,
   },
   statusDisconnected: {
-    backgroundColor: "#6b7280",
+    backgroundColor: theme.colors.disabled,
   },
   emptyState: {
     flex: 1,
@@ -152,19 +177,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   emptyTitle: {
-    color: "#fff",
+    color: theme.colors.text,
     fontSize: 20,
     fontWeight: "600",
     marginBottom: 8,
   },
   emptyDescription: {
-    color: "#888",
+    color: theme.colors.textSubtle,
     fontSize: 14,
     textAlign: "center",
     marginBottom: 24,
   },
   addButton: {
-    backgroundColor: "#4f46e5",
+    backgroundColor: theme.colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
@@ -181,7 +206,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#4f46e5",
+    backgroundColor: theme.colors.primary,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -194,5 +219,17 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 28,
     fontWeight: "300",
+  },
+  headerButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  headerButtonPressed: {
+    backgroundColor: theme.colors.primaryMuted,
+  },
+  headerButtonText: {
+    color: theme.colors.text,
+    fontSize: 18,
   },
 });

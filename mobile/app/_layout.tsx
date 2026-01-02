@@ -6,6 +6,8 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useTheme } from "../hooks/useTheme";
+import { useSettingsStore } from "../stores/settings";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -22,12 +24,18 @@ export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     JetBrainsMono: require("../assets/fonts/JetBrainsMono-Regular.ttf"),
   });
+  const theme = useTheme();
+  const loadSettings = useSettingsStore((state) => state.loadSettings);
 
   useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
 
   if (!fontsLoaded) {
     return null;
@@ -36,18 +44,18 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        <StatusBar style={theme.mode === "dark" ? "light" : "dark"} />
         <Stack
           screenOptions={{
             headerStyle: {
-              backgroundColor: "#1a1a2e",
+              backgroundColor: theme.colors.surface,
             },
-            headerTintColor: "#fff",
+            headerTintColor: theme.colors.text,
             headerTitleStyle: {
               fontWeight: "bold",
             },
             contentStyle: {
-              backgroundColor: "#16213e",
+              backgroundColor: theme.colors.background,
             },
           }}
         >
@@ -66,6 +74,10 @@ export default function RootLayout() {
           <Stack.Screen
             name="query/[connectionId]"
             options={{ title: "Query" }}
+          />
+          <Stack.Screen
+            name="settings"
+            options={{ title: "Settings" }}
           />
         </Stack>
       </SafeAreaProvider>

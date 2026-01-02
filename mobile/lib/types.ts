@@ -1,4 +1,18 @@
-export type DatabaseType = "postgres" | "mysql";
+export type DatabaseType =
+  | "postgres"
+  | "mysql"
+  | "mariadb"
+  | "sqlite"
+  | "cockroachdb"
+  | "mongodb";
+
+export interface SslConfig {
+  enabled: boolean;
+  rejectUnauthorized: boolean;
+  ca?: string;
+  cert?: string;
+  key?: string;
+}
 
 export interface ConnectionConfig {
   id: string;
@@ -9,7 +23,7 @@ export interface ConnectionConfig {
   database: string;
   username: string;
   password: string;
-  ssl: boolean;
+  ssl: boolean | SslConfig;
   createdAt: number;
   updatedAt: number;
 }

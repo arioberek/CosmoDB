@@ -1,9 +1,33 @@
+import Constants, { ExecutionEnvironment } from "expo-constants";
+import type { SslConfig } from "../types";
+
+export interface TlsOptions {
+  enabled: boolean;
+  rejectUnauthorized?: boolean;
+  ca?: string;
+  cert?: string;
+  key?: string;
+}
+
 export interface TcpConnectionOptions {
   host: string;
   port: number;
-  tls?: boolean;
+  tls?: boolean | TlsOptions;
   timeout?: number;
 }
+
+export const sslConfigToTlsOptions = (ssl: boolean | SslConfig): boolean | TlsOptions => {
+  if (typeof ssl === "boolean") {
+    return ssl;
+  }
+  return {
+    enabled: ssl.enabled,
+    rejectUnauthorized: ssl.rejectUnauthorized,
+    ca: ssl.ca,
+    cert: ssl.cert,
+    key: ssl.key,
+  };
+};
 
 type TcpSocketInstance = {
   write: (
@@ -67,13 +91,31 @@ export class TcpClient {
         return;
       }
 
-      const connectionOptions = {
+      const useTls = typeof tls === "boolean" ? tls : tls.enabled;
+      const tlsOptions = typeof tls === "object" ? tls : {};
+
+      const connectionOptions: Record<string, unknown> = {
         host,
         port,
         timeout,
       };
 
-      const socket = tls
+      if (useTls && typeof tls === "object") {
+        if (tls.rejectUnauthorized !== undefined) {
+          connectionOptions.rejectUnauthorized = tls.rejectUnauthorized;
+        }
+        if (tls.ca) {
+          connectionOptions.ca = tls.ca;
+        }
+        if (tls.cert) {
+          connectionOptions.cert = tls.cert;
+        }
+        if (tls.key) {
+          connectionOptions.key = tls.key;
+        }
+      }
+
+      const socket = useTls
         ? TcpSocket.connectTLS?.(connectionOptions, () => {
             this.connected = true;
             resolve();
@@ -180,5 +222,3 @@ export class TcpClient {
     return this.connected;
   }
 }
-
-import Constants, { ExecutionEnvironment } from "expo-constants";

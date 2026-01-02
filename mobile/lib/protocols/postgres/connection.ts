@@ -7,7 +7,7 @@ import type {
   QueryResult,
   TableInfo,
 } from "../../types";
-import { TcpClient } from "../../tcp/socket";
+import { TcpClient, sslConfigToTlsOptions } from "../../tcp/socket";
 import {
   AuthType,
   createMd5PasswordMessage,
@@ -50,7 +50,7 @@ export class PostgresConnection implements DatabaseConnection {
       await this.client.connect({
         host: this.config.host,
         port: this.config.port,
-        tls: this.config.ssl,
+        tls: sslConfigToTlsOptions(this.config.ssl),
         timeout: 10000,
       });
 
@@ -92,12 +92,13 @@ export class PostgresConnection implements DatabaseConnection {
             case AuthType.OK:
               continue;
 
-            case AuthType.CLEARTEXT_PASSWORD:
+            case AuthType.CLEARTEXT_PASSWORD: {
               const clearPassword = createPasswordMessage(this.config.password);
               await this.client.send(clearPassword);
               continue;
+            }
 
-            case AuthType.MD5_PASSWORD:
+            case AuthType.MD5_PASSWORD: {
               if (!auth.data) throw new Error("MD5 salt not provided");
               const md5Password = createMd5PasswordMessage(
                 this.config.password,
@@ -106,6 +107,7 @@ export class PostgresConnection implements DatabaseConnection {
               );
               await this.client.send(md5Password);
               continue;
+            }
 
             case AuthType.SASL: {
               if (!auth.data) throw new Error("SASL mechanisms not provided");

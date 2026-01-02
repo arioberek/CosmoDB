@@ -7,9 +7,24 @@ import type {
   QueryResult,
 } from "../lib/types";
 import { PostgresConnection } from "../lib/protocols/postgres/connection";
+import { MySQLConnection } from "../lib/protocols/mysql/connection";
+import { SQLiteConnection } from "../lib/protocols/sqlite/connection";
+import { MongoDBConnection } from "../lib/protocols/mongodb/connection";
 import { MockConnection } from "../lib/protocols/mock/connection";
+import { formatConnectionError, formatQueryError } from "../lib/errors";
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+type ConnectionFactory = (config: ConnectionConfig) => DatabaseConnection;
+
+const connectionFactories: Record<string, ConnectionFactory> = {
+  postgres: (config) => new PostgresConnection(config),
+  cockroachdb: (config) => new PostgresConnection(config),
+  mysql: (config) => new MySQLConnection(config),
+  mariadb: (config) => new MySQLConnection(config),
+  sqlite: (config) => new SQLiteConnection(config),
+  mongodb: (config) => new MongoDBConnection(config),
+};
 
 interface ActiveConnection {
   config: ConnectionConfig;
@@ -45,16 +60,11 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     if (isExpoGo) {
       instance = new MockConnection(config);
     } else {
-      switch (config.type) {
-        case "postgres":
-          instance = new PostgresConnection(config);
-          break;
-        case "mysql":
-          // TODO: Implement MySQL connection
-          throw new Error("MySQL not yet implemented");
-        default:
-          throw new Error(`Unknown database type: ${config.type}`);
+      const factory = connectionFactories[config.type];
+      if (!factory) {
+        throw new Error(`Unknown database type: ${config.type}`);
       }
+      instance = factory(config);
     }
 
     const activeConnection: ActiveConnection = {
@@ -85,18 +95,19 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
         };
       });
     } catch (error) {
+      const errorMessage = formatConnectionError(error, config.type);
       set((state) => {
         const connections = new Map(state.activeConnections);
         const conn = connections.get(config.id);
         if (conn) {
           conn.state = {
             status: "error",
-            error: error instanceof Error ? error.message : "Connection failed",
+            error: errorMessage,
           };
         }
         return { activeConnections: connections };
       });
-      throw error;
+      throw new Error(errorMessage);
     }
   },
 
@@ -145,6 +156,10 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       throw new Error("Not connected");
     }
 
-    return connection.instance.query(sql);
+    try {
+      return await connection.instance.query(sql);
+    } catch (error) {
+      throw new Error(formatQueryError(error, connection.config.type));
+    }
   },
 }));

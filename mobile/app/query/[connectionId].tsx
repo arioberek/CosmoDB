@@ -3,6 +3,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,8 +12,11 @@ import {
   View,
 } from "react-native";
 import type { NativeSyntheticEvent, TextInputSelectionChangeEventData } from "react-native";
-import type { QueryResult } from "../../lib/types";
+import type { DatabaseType, QueryResult } from "../../lib/types";
 import { useConnectionStore } from "../../stores/connection";
+import { useSettingsStore } from "../../stores/settings";
+import { useTheme } from "../../hooks/useTheme";
+import type { Theme } from "../../lib/theme";
 
 const SQL_KEYWORDS = [
   'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER',
@@ -104,6 +108,58 @@ const TOKEN_COLORS: Record<TokenType, string> = {
   punctuation: '#abb2bf',
   identifier: '#e5c07b',
   default: '#abb2bf',
+};
+
+const DANGEROUS_KEYWORDS = [
+  "UPDATE",
+  "DELETE",
+  "DROP",
+  "TRUNCATE",
+  "ALTER",
+  "MERGE",
+  "REPLACE",
+];
+
+type TransactionStatements = {
+  begin: string;
+  commit: string;
+  rollback: string;
+};
+
+const getTransactionStatements = (
+  type: DatabaseType
+): TransactionStatements | null => {
+  switch (type) {
+    case "postgres":
+    case "cockroachdb":
+    case "sqlite":
+      return { begin: "BEGIN", commit: "COMMIT", rollback: "ROLLBACK" };
+    case "mysql":
+    case "mariadb":
+      return {
+        begin: "START TRANSACTION",
+        commit: "COMMIT",
+        rollback: "ROLLBACK",
+      };
+    case "mongodb":
+      return null;
+  }
+};
+
+const stripSql = (sql: string): string =>
+  sql
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--.*$/gm, " ")
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/\"(?:[^\"\\]|\\.)*\"/g, "\"\"")
+    .replace(/\s+/g, " ");
+
+const findDangerousKeyword = (sql: string): string | null => {
+  const normalized = stripSql(sql).toUpperCase();
+  const match = normalized.match(
+    new RegExp(`\\b(${DANGEROUS_KEYWORDS.join("|")})\\b`)
+  );
+  return match ? match[1] : null;
 };
 
 type SqlContext = 'select' | 'from' | 'where' | 'orderby' | 'groupby' | 'insert' | 'update' | 'set' | 'join' | 'default';
@@ -215,9 +271,23 @@ interface SqlEditorProps {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
+  enableAutocomplete: boolean;
+  showTemplates: boolean;
+  showQuickActions: boolean;
+  styles: ReturnType<typeof createStyles>;
+  theme: Theme;
 }
 
-const SqlEditor = ({ value, onChangeText, placeholder }: SqlEditorProps) => {
+const SqlEditor = ({
+  value,
+  onChangeText,
+  placeholder,
+  enableAutocomplete,
+  showTemplates,
+  showQuickActions,
+  styles,
+  theme,
+}: SqlEditorProps) => {
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -229,18 +299,25 @@ const SqlEditor = ({ value, onChangeText, placeholder }: SqlEditorProps) => {
   const currentWordInfo = useMemo(() => getCurrentWord(value, cursorPosition), [value, cursorPosition]);
   
   const suggestions = useMemo(
-    () => getSuggestions(value, cursorPosition, currentWordInfo.word),
-    [value, cursorPosition, currentWordInfo.word]
+    () =>
+      enableAutocomplete
+        ? getSuggestions(value, cursorPosition, currentWordInfo.word)
+        : [],
+    [value, cursorPosition, currentWordInfo.word, enableAutocomplete]
   );
 
   const handleSelectionChange = useCallback((event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
     const { start } = event.nativeEvent.selection;
     cursorRef.current = start;
     setCursorPosition(start);
+    if (!enableAutocomplete) {
+      setShowAutocomplete(false);
+      return;
+    }
     const wordInfo = getCurrentWord(value, start);
     const filtered = getSuggestions(value, start, wordInfo.word);
     setShowAutocomplete(filtered.length > 0);
-  }, [value]);
+  }, [value, enableAutocomplete]);
 
   const handleTextChange = useCallback((text: string) => {
     onChangeText(text);
@@ -291,23 +368,25 @@ const SqlEditor = ({ value, onChangeText, placeholder }: SqlEditorProps) => {
 
   return (
     <View style={styles.sqlEditorContainer}>
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        style={styles.templatesContainer}
-        contentContainerStyle={styles.templatesContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {SQL_TEMPLATES.map((t) => (
-          <Pressable
-            key={t.label}
-            style={({ pressed }) => [styles.templateChip, pressed && styles.templateChipPressed]}
-            onPress={() => handleTemplatePress(t.template)}
-          >
-            <Text style={styles.templateText}>{t.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {showTemplates && (
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.templatesContainer}
+          contentContainerStyle={styles.templatesContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {SQL_TEMPLATES.map((t) => (
+            <Pressable
+              key={t.label}
+              style={({ pressed }) => [styles.templateChip, pressed && styles.templateChipPressed]}
+              onPress={() => handleTemplatePress(t.template)}
+            >
+              <Text style={styles.templateText}>{t.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
 
       <View style={styles.editorAndAutocompleteWrapper}>
         {showAutocomplete && suggestions.length > 0 && (
@@ -352,56 +431,148 @@ const SqlEditor = ({ value, onChangeText, placeholder }: SqlEditorProps) => {
             onFocus={handleFocus}
             onBlur={handleBlur}
             placeholder={placeholder}
-            placeholderTextColor="#666"
+            placeholderTextColor={theme.colors.placeholder}
             multiline
             textAlignVertical="top"
             autoCapitalize="none"
             autoCorrect={false}
-            selectionColor="#c678dd"
+            selectionColor={theme.colors.accent}
           />
         </View>
       </View>
 
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        style={styles.quickActionsContainer}
-        contentContainerStyle={styles.quickActionsContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {SQL_QUICK_ACTIONS.map((action) => (
-          <Pressable
-            key={action.label}
-            style={({ pressed }) => [styles.quickActionChip, pressed && styles.quickActionChipPressed]}
-            onPress={() => handleQuickAction(action.value)}
-          >
-            <Text style={styles.quickActionText}>{action.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {showQuickActions && (
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.quickActionsContainer}
+          contentContainerStyle={styles.quickActionsContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {SQL_QUICK_ACTIONS.map((action) => (
+            <Pressable
+              key={action.label}
+              style={({ pressed }) => [styles.quickActionChip, pressed && styles.quickActionChipPressed]}
+              onPress={() => handleQuickAction(action.value)}
+            >
+              <Text style={styles.quickActionText}>{action.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 };
 
 export default function QueryScreen() {
+  const theme = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { connectionId } = useLocalSearchParams<{ connectionId: string }>();
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [executing, setExecuting] = useState(false);
+  const [transactionState, setTransactionState] = useState<{
+    active: boolean;
+    statements: TransactionStatements | null;
+  }>({ active: false, statements: null });
+  const settings = useSettingsStore((state) => state.settings);
 
   const { activeConnections, executeQuery } = useConnectionStore();
   const connection = connectionId ? activeConnections.get(connectionId) : null;
 
-  const handleExecute = async () => {
-    if (!connectionId || !query.trim()) return;
+  const executeWithTransaction = async (sql: string) => {
+    if (!connectionId || !connection) return;
+    const transaction = getTransactionStatements(connection.config.type);
+    if (!transaction) {
+      Alert.alert(
+        "Transactions Unavailable",
+        "Transactions are not supported for this connection type."
+      );
+      return;
+    }
+    if (transactionState.active) {
+      Alert.alert(
+        "Transaction Active",
+        "Commit or rollback the current transaction before starting a new one."
+      );
+      return;
+    }
 
     setExecuting(true);
     setError(null);
     setResult(null);
 
     try {
-      const queryResult = await executeQuery(connectionId, query.trim());
+      await executeQuery(connectionId, transaction.begin);
+      const queryResult = await executeQuery(connectionId, sql);
+      setResult(queryResult);
+      setTransactionState({ active: true, statements: transaction });
+    } catch (err) {
+      try {
+        await executeQuery(connectionId, transaction.rollback);
+      } catch {}
+      setError(err instanceof Error ? err.message : "Query failed");
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const finalizeTransaction = async (action: "commit" | "rollback") => {
+    if (!transactionState.active || !transactionState.statements || !connectionId) {
+      return;
+    }
+
+    setExecuting(true);
+    setError(null);
+
+    try {
+      await executeQuery(
+        connectionId,
+        action === "commit"
+          ? transactionState.statements.commit
+          : transactionState.statements.rollback
+      );
+      setTransactionState({ active: false, statements: null });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Transaction failed");
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const handleExecute = async () => {
+    const trimmed = query.trim();
+    if (!connectionId || !trimmed) return;
+
+    if (settings.dangerousOpsHint) {
+      const dangerousKeyword = findDangerousKeyword(trimmed);
+      if (dangerousKeyword) {
+        const action = await new Promise<"cancel" | "wrap" | "run">((resolve) => {
+          Alert.alert(
+            "Confirm Dangerous Command",
+            `This looks like a ${dangerousKeyword} statement. Are you sure you want to run it? These commands can be irreversible.\n\nConsider wrapping it in a transaction (BEGIN ... COMMIT) so you can ROLLBACK if needed.`,
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve("cancel") },
+              { text: "Wrap in Transaction", onPress: () => resolve("wrap") },
+              { text: "Run Anyway", style: "destructive", onPress: () => resolve("run") },
+            ]
+          );
+        });
+        if (action === "cancel") return;
+        if (action === "wrap") {
+          await executeWithTransaction(trimmed);
+          return;
+        }
+      }
+    }
+
+    setExecuting(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const queryResult = await executeQuery(connectionId, trimmed);
       setResult(queryResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Query failed");
@@ -425,6 +596,11 @@ export default function QueryScreen() {
           value={query}
           onChangeText={setQuery}
           placeholder="Type SQL or tap a template..."
+          enableAutocomplete={settings.enableAutocomplete}
+          showTemplates={settings.showSqlTemplates}
+          showQuickActions={settings.showQuickActions}
+          styles={styles}
+          theme={theme}
         />
         <Pressable
           style={[styles.runButton, executing && styles.runButtonDisabled]}
@@ -440,6 +616,40 @@ export default function QueryScreen() {
       </View>
 
       <View style={styles.resultsContainer}>
+        {transactionState.active && (
+          <View style={styles.transactionBanner}>
+            <View style={styles.transactionText}>
+              <Text style={styles.transactionTitle}>Transaction Pending</Text>
+              <Text style={styles.transactionDescription}>
+                Commit to keep changes or rollback to undo them.
+              </Text>
+            </View>
+            <View style={styles.transactionActions}>
+              <Pressable
+                style={[
+                  styles.transactionButton,
+                  styles.transactionRollback,
+                  executing && styles.transactionButtonDisabled,
+                ]}
+                onPress={() => finalizeTransaction("rollback")}
+                disabled={executing}
+              >
+                <Text style={styles.transactionRollbackText}>Rollback</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.transactionButton,
+                  styles.transactionCommit,
+                  executing && styles.transactionButtonDisabled,
+                ]}
+                onPress={() => finalizeTransaction("commit")}
+                disabled={executing}
+              >
+                <Text style={styles.transactionCommitText}>Commit</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
         {error && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorTitle}>Error</Text>
@@ -502,15 +712,15 @@ export default function QueryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#16213e",
+    backgroundColor: theme.colors.background,
   },
   editorContainer: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#ffffff10",
+    borderBottomColor: theme.colors.border,
   },
   sqlEditorContainer: {
     position: 'relative',
@@ -523,17 +733,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   templateChip: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#c678dd30',
+    borderColor: theme.colors.accentMuted,
     marginRight: 6,
   },
   templateChipPressed: {
-    backgroundColor: '#252545',
-    borderColor: '#c678dd60',
+    backgroundColor: theme.colors.surfaceAlt,
+    borderColor: theme.colors.accent,
   },
   templateText: {
     color: '#98c379',
@@ -546,7 +756,7 @@ const styles = StyleSheet.create({
   },
   editorWrapper: {
     position: 'relative',
-    backgroundColor: "#1a1a2e",
+    backgroundColor: theme.colors.surface,
     borderRadius: 8,
     minHeight: 100,
     maxHeight: 200,
@@ -554,7 +764,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   editorWrapperFocused: {
-    borderColor: '#c678dd40',
+    borderColor: theme.colors.accentMuted,
   },
   highlightedTextContainer: {
     position: 'absolute',
@@ -589,20 +799,20 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   quickActionChip: {
-    backgroundColor: '#252545',
+    backgroundColor: theme.colors.surfaceAlt,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#ffffff10',
+    borderColor: theme.colors.border,
     marginRight: 6,
   },
   quickActionChipPressed: {
-    backgroundColor: '#353565',
-    borderColor: '#c678dd40',
+    backgroundColor: theme.colors.surfaceMuted,
+    borderColor: theme.colors.accentMuted,
   },
   quickActionText: {
-    color: '#c678dd',
+    color: theme.colors.accent,
     fontSize: 13,
     fontFamily: 'JetBrainsMono',
   },
@@ -611,7 +821,7 @@ const styles = StyleSheet.create({
     bottom: '100%',
     left: 0,
     right: 0,
-    backgroundColor: '#252545',
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 8,
     marginBottom: 4,
     maxHeight: 250,
@@ -628,22 +838,22 @@ const styles = StyleSheet.create({
   autocompleteItem: {
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#ffffff10',
+    borderBottomColor: theme.colors.border,
   },
   autocompleteItemPressed: {
-    backgroundColor: '#353565',
+    backgroundColor: theme.colors.surfaceMuted,
   },
   autocompleteText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 14,
     fontFamily: 'JetBrainsMono',
   },
   autocompleteMatch: {
-    color: '#c678dd',
+    color: theme.colors.accent,
     fontWeight: '600',
   },
   runButton: {
-    backgroundColor: "#22c55e",
+    backgroundColor: theme.colors.success,
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 6,
@@ -671,12 +881,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   metaText: {
-    color: "#888",
+    color: theme.colors.textSubtle,
     fontSize: 12,
   },
   tableContainer: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: theme.colors.surface,
     borderRadius: 8,
   },
   tableWrapper: {
@@ -684,7 +894,7 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: "row",
-    backgroundColor: "#252545",
+    backgroundColor: theme.colors.surfaceAlt,
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
   },
@@ -692,48 +902,48 @@ const styles = StyleSheet.create({
     width: 150,
     padding: 12,
     borderRightWidth: 1,
-    borderRightColor: "#ffffff10",
+    borderRightColor: theme.colors.border,
   },
   headerText: {
-    color: "#fff",
+    color: theme.colors.text,
     fontSize: 13,
     fontWeight: "600",
   },
   typeText: {
-    color: "#666",
+    color: theme.colors.textSubtle,
     fontSize: 10,
     marginTop: 2,
   },
   tableRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#ffffff10",
+    borderBottomColor: theme.colors.border,
   },
   cell: {
     width: 150,
     padding: 12,
     borderRightWidth: 1,
-    borderRightColor: "#ffffff10",
+    borderRightColor: theme.colors.border,
   },
   cellText: {
-    color: "#ccc",
+    color: theme.colors.textMuted,
     fontSize: 13,
     fontFamily: "JetBrainsMono",
   },
   errorContainer: {
-    backgroundColor: "#dc262620",
+    backgroundColor: theme.colors.dangerMuted,
     borderRadius: 8,
     padding: 16,
     marginBottom: 16,
   },
   errorTitle: {
-    color: "#ef4444",
+    color: theme.colors.danger,
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 4,
   },
   errorMessage: {
-    color: "#fca5a5",
+    color: theme.colors.danger,
     fontSize: 13,
   },
   placeholder: {
@@ -742,13 +952,65 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   placeholderText: {
-    color: "#666",
+    color: theme.colors.placeholder,
     fontSize: 14,
   },
   errorText: {
-    color: "#ef4444",
+    color: theme.colors.danger,
     fontSize: 16,
     textAlign: "center",
     marginTop: 24,
+  },
+  transactionBanner: {
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 12,
+  },
+  transactionText: {
+    gap: 4,
+  },
+  transactionTitle: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  transactionDescription: {
+    color: theme.colors.textSubtle,
+    fontSize: 12,
+  },
+  transactionActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  transactionButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  transactionCommit: {
+    backgroundColor: theme.colors.success,
+  },
+  transactionCommitText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  transactionRollback: {
+    backgroundColor: theme.colors.dangerMuted,
+    borderWidth: 1,
+    borderColor: theme.colors.danger,
+  },
+  transactionRollbackText: {
+    color: theme.colors.danger,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  transactionButtonDisabled: {
+    opacity: 0.6,
   },
 });
