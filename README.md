@@ -8,7 +8,7 @@ Connect directly to PostgreSQL and MySQL/MariaDB databases using native TCP sock
 
 ## Overview
 
-CosmoDB is a full-featured database client that brings professional database management to your mobile device. Instead of relying on REST APIs or web dashboards, this app connects directly to your database servers using the native database wire protocols.
+COSMQ is a full-featured database client that brings professional database management to your mobile device. Instead of relying on REST APIs or web dashboards, this app connects directly to your database servers using the native database wire protocols.
 
 **Key Highlights:**
 - 🔌 Direct TCP connection to databases (no intermediate API)

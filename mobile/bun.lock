@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "cosmodb",
+      "name": "cosmq",
       "dependencies": {
         "@tanstack/react-query": "^5.90.16",
         "expo": "~54.0.0",

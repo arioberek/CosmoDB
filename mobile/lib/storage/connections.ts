@@ -1,8 +1,8 @@
 import * as SecureStore from "expo-secure-store";
 import type { ConnectionConfig } from "../types";
 
-const CONNECTIONS_KEY = "cosmodb_connections";
-const PASSWORD_PREFIX = "cosmodb_pwd_";
+const CONNECTIONS_KEY = "cosmq_connections";
+const PASSWORD_PREFIX = "cosmq_pwd_";
 
 export async function saveConnection(
   connection: ConnectionConfig

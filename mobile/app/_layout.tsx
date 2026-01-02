@@ -27,7 +27,7 @@ export default function RootLayout() {
         >
           <Stack.Screen
             name="index"
-            options={{ title: "CosmoDB", headerLargeTitle: true }}
+            options={{ title: "COSMQ", headerLargeTitle: true }}
           />
           <Stack.Screen
             name="connection/new"
