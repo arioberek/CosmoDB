@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
+import * as LegacyFileSystem from "expo-file-system/legacy";
 import { router } from "expo-router";
 import type { FC } from "react";
 import { useMemo, useState } from "react";
@@ -20,9 +21,11 @@ import {
   generateConnectionId,
   saveConnection,
 } from "../../lib/storage/connections";
-import type { ConnectionConfig, DatabaseType } from "../../lib/types";
+import type { ConnectionConfig, ConnectionColor, DatabaseType } from "../../lib/types";
+import { CONNECTION_COLORS } from "../../lib/types";
 import { useTheme } from "../../hooks/useTheme";
 import type { Theme } from "../../lib/theme";
+import { useConnectionStore } from "../../stores/connection";
 import PostgresqlIcon from "../../assets/icons/postgresql.svg";
 import MysqlIcon from "../../assets/icons/mysql.svg";
 import MariadbIcon from "../../assets/icons/mariadb.svg";
@@ -136,16 +139,44 @@ const parseConnectionUrl = (
 
 const isSqlite = (dbType: DatabaseType) => dbType === "sqlite";
 
+const SQLITE_MAGIC_HEADER = "SQLite format 3";
+
+const validateSqliteFile = async (uri: string): Promise<boolean> => {
+  try {
+    const base64Header = await LegacyFileSystem.readAsStringAsync(uri, {
+      encoding: LegacyFileSystem.EncodingType.Base64,
+      length: 16,
+      position: 0,
+    });
+    const header = atob(base64Header);
+    return header.startsWith(SQLITE_MAGIC_HEADER);
+  } catch {
+    return false;
+  }
+};
+
 const pickDatabaseFile = async (): Promise<string | null> => {
   try {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ["application/x-sqlite3", "application/octet-stream", "*/*"],
-      copyToCacheDirectory: false,
+      type: ["application/x-sqlite3", "application/vnd.sqlite3", "application/octet-stream"],
+      copyToCacheDirectory: true,
     });
     if (result.canceled || result.assets.length === 0) {
       return null;
     }
-    return result.assets[0].uri;
+
+    const uri = result.assets[0].uri;
+    const isValid = await validateSqliteFile(uri);
+
+    if (!isValid) {
+      Alert.alert(
+        "Invalid File",
+        "The selected file is not a valid SQLite database. Please select a .db, .sqlite, or .sqlite3 file."
+      );
+      return null;
+    }
+
+    return uri;
   } catch {
     return null;
   }
@@ -156,6 +187,9 @@ export default function NewConnectionScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const { connect, disconnect } = useConnectionStore();
 
   const [connectionUrl, setConnectionUrl] = useState("");
   const [name, setName] = useState("");
@@ -166,6 +200,7 @@ export default function NewConnectionScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [ssl, setSsl] = useState(false);
+  const [color, setColor] = useState<ConnectionColor | undefined>(undefined);
 
   const handleTypeChange = (newType: DatabaseType) => {
     setType(newType);
@@ -195,6 +230,63 @@ export default function NewConnectionScreen() {
     if (parsed.username) setUsername(parsed.username);
     if (parsed.password) setPassword(parsed.password);
     if (parsed.ssl !== undefined) setSsl(parsed.ssl);
+  };
+
+  const handleTestConnection = async () => {
+    if (!isSqlite(type)) {
+      if (!host.trim()) {
+        Alert.alert("Error", "Host is required");
+        return;
+      }
+      if (!username.trim()) {
+        Alert.alert("Error", "Username is required");
+        return;
+      }
+    }
+
+    if (!database.trim()) {
+      Alert.alert(
+        "Error",
+        isSqlite(type)
+          ? "Database file path is required"
+          : "Database name is required"
+      );
+      return;
+    }
+
+    setTesting(true);
+    const testId = `test_${Date.now()}`;
+
+    try {
+      const testConfig: ConnectionConfig = {
+        id: testId,
+        name: name.trim() || "Test Connection",
+        type,
+        host: isSqlite(type) ? "" : host.trim(),
+        port: isSqlite(type) ? 0 : parseInt(port, 10) || DEFAULT_PORTS[type],
+        database: database.trim(),
+        username: isSqlite(type) ? "" : username.trim(),
+        password: isSqlite(type) ? "" : password,
+        ssl: isSqlite(type) ? false : ssl,
+        color,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      await connect(testConfig);
+      Alert.alert("Success", "Connection successful!");
+    } catch (error) {
+      Alert.alert(
+        "Connection Failed",
+        error instanceof Error ? error.message : "Failed to connect"
+      );
+    } finally {
+      try {
+        await disconnect(testId);
+      } catch {
+      }
+      setTesting(false);
+    }
   };
 
   const handleSave = async () => {
@@ -237,6 +329,7 @@ export default function NewConnectionScreen() {
         username: isSqlite(type) ? "" : username.trim(),
         password: isSqlite(type) ? "" : password,
         ssl: isSqlite(type) ? false : ssl,
+        color,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -274,6 +367,32 @@ export default function NewConnectionScreen() {
             placeholder="My Database"
             placeholderTextColor={theme.colors.placeholder}
           />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Color Tag (Optional)</Text>
+          <View style={styles.colorGrid}>
+            <Pressable
+              style={[
+                styles.colorOption,
+                !color && styles.colorOptionActive,
+              ]}
+              onPress={() => setColor(undefined)}
+            >
+              <Text style={styles.colorNoneText}>None</Text>
+            </Pressable>
+            {CONNECTION_COLORS.map((c) => (
+              <Pressable
+                key={c}
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: c },
+                  color === c && styles.colorOptionActive,
+                ]}
+                onPress={() => setColor(c)}
+              />
+            ))}
+          </View>
         </View>
 
         {!isSqlite(type) && (
@@ -419,6 +538,16 @@ export default function NewConnectionScreen() {
         )}
 
         <Pressable
+          style={[styles.testButton, (testing || saving) && styles.testButtonDisabled]}
+          onPress={handleTestConnection}
+          disabled={testing || saving}
+        >
+          <Text style={styles.testButtonText}>
+            {testing ? "Testing..." : "Test Connection"}
+          </Text>
+        </Pressable>
+
+        <Pressable
           style={[styles.saveButton, saving && styles.saveButtonDisabled]}
           onPress={handleSave}
           disabled={saving}
@@ -510,6 +639,46 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  colorGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  colorOption: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: "transparent",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: theme.colors.surface,
+  },
+  colorOptionActive: {
+    borderColor: theme.colors.text,
+  },
+  colorNoneText: {
+    color: theme.colors.textMuted,
+    fontSize: 10,
+    fontWeight: "500",
+  },
+  testButton: {
+    backgroundColor: theme.colors.surface,
+    padding: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  testButtonDisabled: {
+    opacity: 0.6,
+  },
+  testButtonText: {
+    color: theme.colors.primary,
+    fontSize: 16,
+    fontWeight: "600",
   },
   saveButton: {
     backgroundColor: theme.colors.primary,

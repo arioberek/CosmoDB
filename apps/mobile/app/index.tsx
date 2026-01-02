@@ -46,6 +46,11 @@ const ConnectionItem = ({
       ]}
       onPress={handlePress}
     >
+      {connection.color && (
+        <View
+          style={[styles.colorIndicator, { backgroundColor: connection.color }]}
+        />
+      )}
       <DatabaseIcon type={connection.type} size={32} color={theme.colors.text} />
       <View style={styles.connectionInfo}>
         <Text style={styles.connectionName}>{connection.name}</Text>
@@ -138,9 +143,19 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     gap: 12,
+    overflow: "hidden",
   },
   connectionItemPressed: {
     opacity: 0.8,
+  },
+  colorIndicator: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
   },
   connectionInfo: {
     flex: 1,

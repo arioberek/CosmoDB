@@ -10,6 +10,7 @@ export type AppSettings = {
   autoRollbackSeconds: number;
   appLockEnabled: boolean;
   appLockTimeout: AppLockTimeout;
+  hapticFeedbackEnabled: boolean;
 };
 
 export const AUTO_ROLLBACK_RANGE = {
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoRollbackSeconds: DEFAULT_AUTO_ROLLBACK_SECONDS,
   appLockEnabled: false,
   appLockTimeout: "immediate",
+  hapticFeedbackEnabled: true,
 };
 
 export const normalizeAutoRollbackSeconds = (value: number): number => {

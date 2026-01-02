@@ -14,6 +14,21 @@ export interface SslConfig {
   key?: string;
 }
 
+export const CONNECTION_COLORS = [
+  "#6366f1",
+  "#8b5cf6",
+  "#ec4899",
+  "#ef4444",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#14b8a6",
+  "#06b6d4",
+  "#3b82f6",
+] as const;
+
+export type ConnectionColor = (typeof CONNECTION_COLORS)[number];
+
 export interface ConnectionConfig {
   id: string;
   name: string;
@@ -24,6 +39,7 @@ export interface ConnectionConfig {
   username: string;
   password: string;
   ssl: boolean | SslConfig;
+  color?: ConnectionColor;
   createdAt: number;
   updatedAt: number;
 }

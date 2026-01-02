@@ -1,0 +1,66 @@
+import * as SecureStore from "expo-secure-store";
+
+const HISTORY_KEY = "cosmq_query_history";
+const MAX_HISTORY = 50;
+
+export interface QueryHistoryItem {
+  id: string;
+  query: string;
+  connectionId: string;
+  connectionName: string;
+  timestamp: number;
+}
+
+export const getQueryHistory = async (): Promise<QueryHistoryItem[]> => {
+  try {
+    const data = await SecureStore.getItemAsync(HISTORY_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const addToQueryHistory = async (
+  item: Omit<QueryHistoryItem, "id" | "timestamp">
+): Promise<void> => {
+  try {
+    const history = await getQueryHistory();
+    const newItem: QueryHistoryItem = {
+      ...item,
+      id: `qh_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      timestamp: Date.now(),
+    };
+
+    const isDuplicate = history.some(
+      (h) =>
+        h.query.trim() === item.query.trim() &&
+        h.connectionId === item.connectionId
+    );
+    if (isDuplicate) {
+      const filtered = history.filter(
+        (h) =>
+          !(
+            h.query.trim() === item.query.trim() &&
+            h.connectionId === item.connectionId
+          )
+      );
+      filtered.unshift(newItem);
+      await SecureStore.setItemAsync(
+        HISTORY_KEY,
+        JSON.stringify(filtered.slice(0, MAX_HISTORY))
+      );
+      return;
+    }
+
+    history.unshift(newItem);
+    await SecureStore.setItemAsync(
+      HISTORY_KEY,
+      JSON.stringify(history.slice(0, MAX_HISTORY))
+    );
+  } catch {
+  }
+};
+
+export const clearQueryHistory = async (): Promise<void> => {
+  await SecureStore.deleteItemAsync(HISTORY_KEY);
+};

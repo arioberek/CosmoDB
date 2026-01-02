@@ -417,6 +417,17 @@ export default function SettingsScreen() {
         />
       </Section>
 
+      <Section title="Feedback" styles={styles}>
+        <SettingRow
+          label="Haptic Feedback"
+          description="Vibrate on query success, errors, and transactions."
+          value={settings.hapticFeedbackEnabled}
+          onValueChange={(value) => updateSettings({ hapticFeedbackEnabled: value })}
+          styles={styles}
+          theme={theme}
+        />
+      </Section>
+
       <Section title="About" styles={styles}>
         <InfoRow
           label="Version"

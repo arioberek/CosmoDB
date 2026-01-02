@@ -1,9 +1,11 @@
 import { FlashList } from "@shopify/flash-list";
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,12 +14,24 @@ import {
   View,
 } from "react-native";
 import type { NativeSyntheticEvent, TextInputSelectionChangeEventData } from "react-native";
-import type { DatabaseType, QueryResult } from "../../lib/types";
+import type { ColumnInfo, DatabaseType, QueryResult, TableInfo } from "../../lib/types";
 import { useConnectionStore } from "../../stores/connection";
 import { useSettingsStore } from "../../stores/settings";
 import { useTheme } from "../../hooks/useTheme";
 import type { Theme } from "../../lib/theme";
 import { normalizeAutoRollbackSeconds } from "../../lib/settings";
+import {
+  addToQueryHistory,
+  getQueryHistory,
+  type QueryHistoryItem,
+} from "../../lib/storage/query-history";
+import {
+  deleteSnippet,
+  getSnippets,
+  saveSnippet,
+  type QuerySnippet,
+} from "../../lib/storage/snippets";
+import { useHaptic } from "../../lib/haptics";
 
 const SQL_KEYWORDS = [
   'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER',
@@ -478,6 +492,7 @@ const SqlEditor = ({
 export default function QueryScreen() {
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const haptic = useHaptic();
   const { connectionId } = useLocalSearchParams<{ connectionId: string }>();
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
@@ -495,6 +510,18 @@ export default function QueryScreen() {
   const autoRollbackTriggered = useRef(false);
   const settings = useSettingsStore((state) => state.settings);
 
+  const [showTables, setShowTables] = useState(false);
+  const [tables, setTables] = useState<TableInfo[]>([]);
+  const [expandedTable, setExpandedTable] = useState<string | null>(null);
+  const [tableColumns, setTableColumns] = useState<Record<string, ColumnInfo[]>>({});
+  const [loadingTables, setLoadingTables] = useState(false);
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<QueryHistoryItem[]>([]);
+
+  const [showSnippets, setShowSnippets] = useState(false);
+  const [snippets, setSnippets] = useState<QuerySnippet[]>([]);
+
   const { activeConnections, executeQuery } = useConnectionStore();
   const connection = connectionId ? activeConnections.get(connectionId) : null;
   const showAutoRollbackCountdown =
@@ -502,6 +529,112 @@ export default function QueryScreen() {
   const transactionChipLabel = showAutoRollbackCountdown
     ? `Txn ${formatCountdown(transactionTimeLeft)}`
     : "Txn Manual";
+
+  const copyAllResults = async () => {
+    if (!result) return;
+    const header = result.columns.map(c => c.name).join("\t");
+    const rows = result.rows.map(row =>
+      result.columns.map(c => {
+        const val = row[c.name];
+        return val === null ? "NULL" : String(val);
+      }).join("\t")
+    ).join("\n");
+    await Clipboard.setStringAsync(`${header}\n${rows}`);
+    Alert.alert("Copied", "Results copied to clipboard");
+  };
+
+  const loadTables = async () => {
+    if (!connection?.instance) return;
+    setLoadingTables(true);
+    try {
+      const tableList = await connection.instance.listTables();
+      setTables(tableList);
+    } catch {
+      Alert.alert("Error", "Failed to load tables");
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
+  const loadTableColumns = async (tableName: string) => {
+    if (!connection?.instance) return;
+    
+    if (expandedTable === tableName) {
+      setExpandedTable(null);
+      return;
+    }
+
+    if (tableColumns[tableName]) {
+      setExpandedTable(tableName);
+      return;
+    }
+
+    try {
+      const table = tables.find(t => t.name === tableName);
+      const schema = table?.schema || 'public';
+      const columns = await connection.instance.describeTable(schema, tableName);
+      setTableColumns(prev => ({ ...prev, [tableName]: columns }));
+      setExpandedTable(tableName);
+    } catch {
+      Alert.alert("Error", `Failed to load columns for ${tableName}`);
+    }
+  };
+
+  const insertIntoQuery = (text: string) => {
+    setQuery(prev => prev + text + ' ');
+  };
+
+  const loadHistory = async () => {
+    const items = await getQueryHistory();
+    setHistory(items);
+  };
+
+  const handleSelectHistory = (item: QueryHistoryItem) => {
+    setQuery(item.query);
+    setShowHistory(false);
+  };
+
+  const loadSnippets = async () => {
+    const items = await getSnippets();
+    setSnippets(items);
+  };
+
+  const handleSelectSnippet = (snippet: QuerySnippet) => {
+    setQuery(snippet.query);
+    setShowSnippets(false);
+  };
+
+  const handleSaveSnippet = async () => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      Alert.alert("Error", "Enter a query first");
+      return;
+    }
+    Alert.prompt(
+      "Save Snippet",
+      "Enter a name for this snippet:",
+      async (name) => {
+        if (!name?.trim()) return;
+        await saveSnippet({ name: name.trim(), query: trimmed });
+        haptic.success();
+        Alert.alert("Saved", "Snippet saved successfully");
+      }
+    );
+  };
+
+  const handleDeleteSnippet = async (id: string) => {
+    Alert.alert("Delete Snippet", "Are you sure?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          await deleteSnippet(id);
+          loadSnippets();
+        },
+      },
+    ]);
+  };
 
   const finalizeTransaction = useCallback(
     async (action: "commit" | "rollback", auto = false) => {
@@ -529,13 +662,19 @@ export default function QueryScreen() {
         setTransactionDeadline(null);
         setTransactionTimeLeft(0);
         setShowTransactionBanner(false);
+        if (action === "commit") {
+          haptic.success();
+        } else {
+          haptic.warning();
+        }
       } catch (err) {
+        haptic.error();
         setError(err instanceof Error ? err.message : "Transaction failed");
       } finally {
         setExecuting(false);
       }
     },
-    [connectionId, executeQuery, transactionState.active, transactionState.statements]
+    [connectionId, executeQuery, haptic, transactionState.active, transactionState.statements]
   );
 
   const executeWithTransaction = async (sql: string) => {
@@ -672,7 +811,14 @@ export default function QueryScreen() {
     try {
       const queryResult = await executeQuery(connectionId, trimmed);
       setResult(queryResult);
+      haptic.success();
+      addToQueryHistory({
+        query: trimmed,
+        connectionId,
+        connectionName: connection?.config.name ?? "Unknown",
+      });
     } catch (err) {
+      haptic.error();
       setError(err instanceof Error ? err.message : "Query failed");
     } finally {
       setExecuting(false);
@@ -701,6 +847,35 @@ export default function QueryScreen() {
           theme={theme}
         />
         <View style={styles.runRow}>
+          <Pressable
+            style={styles.tablesToggle}
+            onPress={() => {
+              if (!showTables && tables.length === 0) loadTables();
+              setShowTables(!showTables);
+            }}
+          >
+            <Text style={styles.tablesToggleText}>
+              {showTables ? "Hide Tables" : "Tables"}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={styles.historyToggle}
+            onPress={() => {
+              loadHistory();
+              setShowHistory(true);
+            }}
+          >
+            <Text style={styles.historyToggleText}>History</Text>
+          </Pressable>
+          <Pressable
+            style={styles.snippetsToggle}
+            onPress={() => {
+              loadSnippets();
+              setShowSnippets(true);
+            }}
+          >
+            <Text style={styles.snippetsToggleText}>Snippets</Text>
+          </Pressable>
           {transactionState.active && (
             <Pressable
               style={styles.transactionChip}
@@ -724,6 +899,47 @@ export default function QueryScreen() {
       </View>
 
       <View style={styles.resultsContainer}>
+        {showTables && (
+          <View style={styles.tablesPanel}>
+            <View style={styles.tablesPanelHeader}>
+              <Text style={styles.tablesPanelTitle}>Tables</Text>
+              <Pressable onPress={loadTables} disabled={loadingTables}>
+                <Text style={styles.refreshText}>{loadingTables ? "Loading..." : "Refresh"}</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.tablesList} nestedScrollEnabled>
+              {tables.length === 0 && !loadingTables && (
+                <Text style={styles.tablesEmpty}>No tables found</Text>
+              )}
+              {tables.map(table => (
+                <View key={`${table.schema}-${table.name}`}>
+                  <Pressable
+                    style={styles.tableItem}
+                    onPress={() => loadTableColumns(table.name)}
+                    onLongPress={() => insertIntoQuery(table.name)}
+                  >
+                    <Text style={styles.tableName}>{table.name}</Text>
+                    <Text style={styles.tableType}>{table.type}</Text>
+                  </Pressable>
+                  {expandedTable === table.name && tableColumns[table.name] && (
+                    <View style={styles.columnsList}>
+                      {tableColumns[table.name].map(col => (
+                        <Pressable
+                          key={col.name}
+                          style={styles.columnItem}
+                          onPress={() => insertIntoQuery(col.name)}
+                        >
+                          <Text style={styles.columnName}>{col.name}</Text>
+                          <Text style={styles.columnType}>{col.type}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
         {transactionState.active && showTransactionBanner && (
           <View style={styles.transactionBanner}>
             <View style={styles.transactionHeader}>
@@ -771,6 +987,15 @@ export default function QueryScreen() {
           <View style={styles.errorContainer}>
             <Text style={styles.errorTitle}>Error</Text>
             <Text style={styles.errorMessage}>{error}</Text>
+            <Pressable
+              style={[styles.retryButton, executing && styles.retryButtonDisabled]}
+              onPress={handleExecute}
+              disabled={executing}
+            >
+              <Text style={styles.retryButtonText}>
+                {executing ? "Retrying..." : "Retry"}
+              </Text>
+            </Pressable>
           </View>
         )}
 
@@ -780,7 +1005,12 @@ export default function QueryScreen() {
               <Text style={styles.metaText}>
                 {result.rowCount} rows - {result.executionTime}ms
               </Text>
-              <Text style={styles.metaText}>{result.command}</Text>
+              <View style={styles.resultsActions}>
+                <Pressable style={styles.copyAllButton} onPress={copyAllResults}>
+                  <Text style={styles.copyAllText}>Copy All</Text>
+                </Pressable>
+                <Text style={styles.metaText}>{result.command}</Text>
+              </View>
             </View>
 
             {result.columns.length > 0 && (
@@ -825,6 +1055,93 @@ export default function QueryScreen() {
           </View>
         )}
       </View>
+
+      <Modal
+        visible={showHistory}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowHistory(false)}
+      >
+        <View style={styles.historyModal}>
+          <View style={styles.historyModalContent}>
+            <View style={styles.historyModalHeader}>
+              <Text style={styles.historyModalTitle}>Query History</Text>
+              <Pressable onPress={() => setShowHistory(false)}>
+                <Text style={styles.historyCloseText}>Close</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.historyList}>
+              {history.length === 0 ? (
+                <Text style={styles.historyEmpty}>No query history yet</Text>
+              ) : (
+                history.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={styles.historyItem}
+                    onPress={() => handleSelectHistory(item)}
+                  >
+                    <Text style={styles.historyQuery} numberOfLines={2}>
+                      {item.query}
+                    </Text>
+                    <View style={styles.historyMeta}>
+                      <Text style={styles.historyConnection}>
+                        {item.connectionName}
+                      </Text>
+                      <Text style={styles.historyTime}>
+                        {new Date(item.timestamp).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showSnippets}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSnippets(false)}
+      >
+        <View style={styles.snippetsModal}>
+          <View style={styles.snippetsModalContent}>
+            <View style={styles.snippetsModalHeader}>
+              <Text style={styles.snippetsModalTitle}>Saved Snippets</Text>
+              <View style={styles.snippetsHeaderActions}>
+                <Pressable onPress={handleSaveSnippet}>
+                  <Text style={styles.snippetsSaveText}>Save Current</Text>
+                </Pressable>
+                <Pressable onPress={() => setShowSnippets(false)}>
+                  <Text style={styles.snippetsCloseText}>Close</Text>
+                </Pressable>
+              </View>
+            </View>
+            <ScrollView style={styles.snippetsList}>
+              {snippets.length === 0 ? (
+                <Text style={styles.snippetsEmpty}>
+                  No snippets yet. Tap "Save Current" to save your query.
+                </Text>
+              ) : (
+                snippets.map((snippet) => (
+                  <Pressable
+                    key={snippet.id}
+                    style={styles.snippetItem}
+                    onPress={() => handleSelectSnippet(snippet)}
+                    onLongPress={() => handleDeleteSnippet(snippet.id)}
+                  >
+                    <Text style={styles.snippetName}>{snippet.name}</Text>
+                    <Text style={styles.snippetQuery} numberOfLines={2}>
+                      {snippet.query}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -995,9 +1312,233 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     gap: 10,
     marginTop: 12,
   },
+  tablesToggle: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginRight: 'auto',
+  },
+  tablesToggleText: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  historyToggle: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  historyToggleText: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  historyModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  historyModalContent: {
+    backgroundColor: theme.colors.background,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '70%',
+  },
+  historyModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  historyModalTitle: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  historyCloseText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  historyList: {
+    flex: 1,
+  },
+  historyEmpty: {
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    padding: 32,
+    fontSize: 14,
+  },
+  historyItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  historyQuery: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontFamily: 'JetBrainsMono',
+    marginBottom: 6,
+  },
+  historyMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  historyConnection: {
+    color: theme.colors.textSubtle,
+    fontSize: 11,
+  },
+  historyTime: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+  },
+  snippetsToggle: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  snippetsToggleText: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  snippetsModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  snippetsModalContent: {
+    backgroundColor: theme.colors.background,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '70%',
+  },
+  snippetsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  snippetsModalTitle: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  snippetsHeaderActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  snippetsSaveText: {
+    color: theme.colors.success,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  snippetsCloseText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  snippetsList: {
+    flex: 1,
+  },
+  snippetsEmpty: {
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    padding: 32,
+    fontSize: 14,
+  },
+  snippetItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  snippetName: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  snippetQuery: {
+    color: theme.colors.textSubtle,
+    fontSize: 12,
+    fontFamily: 'JetBrainsMono',
+  },
   resultsContainer: {
     flex: 1,
     padding: 16,
+  },
+  tablesPanel: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 8,
+    marginBottom: 12,
+    maxHeight: 180,
+  },
+  tablesPanelHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  tablesPanelTitle: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  refreshText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+  },
+  tablesList: {
+    flex: 1,
+  },
+  tablesEmpty: {
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    padding: 16,
+    fontSize: 12,
+  },
+  tableItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  tableName: {
+    color: theme.colors.text,
+    fontSize: 13,
+  },
+  tableType: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+  },
+  columnsList: {
+    backgroundColor: theme.colors.background,
+    paddingLeft: 16,
+  },
+  columnItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  columnName: {
+    color: theme.colors.textSubtle,
+    fontSize: 12,
+  },
+  columnType: {
+    color: theme.colors.textMuted,
+    fontSize: 10,
   },
   resultsMeta: {
     flexDirection: "row",
@@ -1007,6 +1548,22 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   metaText: {
     color: theme.colors.textSubtle,
     fontSize: 12,
+  },
+  resultsActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  copyAllButton: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  copyAllText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+    fontWeight: '500',
   },
   tableContainer: {
     flex: 1,
@@ -1069,6 +1626,22 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   errorMessage: {
     color: theme.colors.danger,
     fontSize: 13,
+  },
+  retryButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 12,
+  },
+  retryButtonDisabled: {
+    opacity: 0.6,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   placeholder: {
     flex: 1,
