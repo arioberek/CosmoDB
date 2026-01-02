@@ -24,10 +24,86 @@ const DEFAULT_PORTS: Record<DatabaseType, number> = {
   mysql: 3306,
 };
 
+type ParsedConnectionUrl = {
+  type?: DatabaseType;
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  password?: string;
+  ssl?: boolean;
+};
+
+const URL_PROTOCOL_TO_TYPE: Record<string, DatabaseType> = {
+  postgres: "postgres",
+  postgresql: "postgres",
+  mysql: "mysql",
+};
+
+const parseSslValue = (value: string | null): boolean | undefined => {
+  if (!value) return undefined;
+  const normalized = value.toLowerCase();
+  if (["disable", "false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return true;
+};
+
+const parseConnectionUrl = (
+  rawValue: string,
+  fallbackType: DatabaseType
+): ParsedConnectionUrl | null => {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return null;
+
+  let url: URL | null = null;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    if (!trimmed.includes("://")) {
+      try {
+        url = new URL(`${fallbackType}://${trimmed}`);
+      } catch {
+        return null;
+      }
+    } else {
+      return null;
+    }
+  }
+
+  if (!url) return null;
+
+  const protocol = url.protocol.replace(":", "").toLowerCase();
+  const type = URL_PROTOCOL_TO_TYPE[protocol];
+  if (!type) return null;
+
+  const host = url.hostname || undefined;
+  const port = url.port ? Number(url.port) : undefined;
+  const database = url.pathname
+    ? url.pathname.replace(/^\/+/, "") || undefined
+    : undefined;
+  const username = url.username || undefined;
+  const password = url.password || undefined;
+  const ssl =
+    parseSslValue(url.searchParams.get("sslmode")) ??
+    parseSslValue(url.searchParams.get("ssl"));
+
+  return {
+    type,
+    host,
+    port,
+    database,
+    username,
+    password,
+    ssl,
+  };
+};
+
 export default function NewConnectionScreen() {
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
 
+  const [connectionUrl, setConnectionUrl] = useState("");
   const [name, setName] = useState("");
   const [type, setType] = useState<DatabaseType>("postgres");
   const [host, setHost] = useState("");
@@ -40,6 +116,29 @@ export default function NewConnectionScreen() {
   const handleTypeChange = (newType: DatabaseType) => {
     setType(newType);
     setPort(DEFAULT_PORTS[newType].toString());
+  };
+
+  const handleUrlChange = (value: string) => {
+    setConnectionUrl(value);
+    const parsed = parseConnectionUrl(value, type);
+    if (!parsed) return;
+
+    if (parsed.type && parsed.type !== type) {
+      setType(parsed.type);
+      if (parsed.port !== undefined) {
+        setPort(parsed.port.toString());
+      } else {
+        setPort(DEFAULT_PORTS[parsed.type].toString());
+      }
+    } else if (parsed.port !== undefined) {
+      setPort(parsed.port.toString());
+    }
+
+    if (parsed.host) setHost(parsed.host);
+    if (parsed.database) setDatabase(parsed.database);
+    if (parsed.username) setUsername(parsed.username);
+    if (parsed.password) setPassword(parsed.password);
+    if (parsed.ssl !== undefined) setSsl(parsed.ssl);
   };
 
   const handleSave = async () => {
@@ -109,6 +208,19 @@ export default function NewConnectionScreen() {
             onChangeText={setName}
             placeholder="My Database"
             placeholderTextColor="#666"
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Connection URL</Text>
+          <TextInput
+            style={styles.input}
+            value={connectionUrl}
+            onChangeText={handleUrlChange}
+            placeholder="postgres://user:pass@host:5432/db?sslmode=require"
+            placeholderTextColor="#666"
+            autoCapitalize="none"
+            autoCorrect={false}
           />
         </View>
 

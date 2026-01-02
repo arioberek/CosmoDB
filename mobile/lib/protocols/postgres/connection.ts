@@ -13,6 +13,8 @@ import {
   createMd5PasswordMessage,
   createPasswordMessage,
   createQueryMessage,
+  createSaslInitialResponseMessage,
+  createSaslResponseMessage,
   createStartupMessage,
   createTerminateMessage,
   parseAuthenticationMessage,
@@ -21,7 +23,14 @@ import {
   parseErrorResponse,
   parseMessage,
   parseRowDescription,
+  parseSaslMechanisms,
 } from "./messages";
+import {
+  buildScramClientFinal,
+  startScramSession,
+  verifyScramServerFinal,
+  type ScramSession,
+} from "./scram";
 
 export class PostgresConnection implements DatabaseConnection {
   config: ConnectionConfig;
@@ -64,55 +73,108 @@ export class PostgresConnection implements DatabaseConnection {
 
     await this.client.send(startupMessage);
 
-    // Wait for authentication response
+    let scramSession: ScramSession | null = null;
+
     while (true) {
       const data = await this.client.receive();
       this.buffer = Buffer.concat([this.buffer, data]);
 
-      const message = parseMessage(this.buffer);
-      if (!message) continue;
+      while (true) {
+        const message = parseMessage(this.buffer);
+        if (!message) break;
 
-      this.buffer = this.buffer.subarray(message.length + 1);
+        this.buffer = this.buffer.slice(message.length + 1);
 
-      if (message.type === "R") {
-        const auth = parseAuthenticationMessage(message.payload);
+        if (message.type === "R") {
+          const auth = parseAuthenticationMessage(message.payload);
 
-        switch (auth.authType) {
-          case AuthType.OK:
-            // Authentication successful, wait for ReadyForQuery
-            continue;
+          switch (auth.authType) {
+            case AuthType.OK:
+              continue;
 
-          case AuthType.CLEARTEXT_PASSWORD:
-            const clearPassword = createPasswordMessage(this.config.password);
-            await this.client.send(clearPassword);
-            continue;
+            case AuthType.CLEARTEXT_PASSWORD:
+              const clearPassword = createPasswordMessage(this.config.password);
+              await this.client.send(clearPassword);
+              continue;
 
-          case AuthType.MD5_PASSWORD:
-            if (!auth.data) throw new Error("MD5 salt not provided");
-            const md5Password = createMd5PasswordMessage(
-              this.config.password,
-              this.config.username,
-              auth.data
-            );
-            await this.client.send(md5Password);
-            continue;
+            case AuthType.MD5_PASSWORD:
+              if (!auth.data) throw new Error("MD5 salt not provided");
+              const md5Password = createMd5PasswordMessage(
+                this.config.password,
+                this.config.username,
+                auth.data
+              );
+              await this.client.send(md5Password);
+              continue;
 
-          default:
-            throw new Error(`Unsupported auth type: ${auth.authType}`);
+            case AuthType.SASL: {
+              if (!auth.data) throw new Error("SASL mechanisms not provided");
+              const mechanisms = parseSaslMechanisms(auth.data);
+              const selected =
+                mechanisms.find((m) => m === "SCRAM-SHA-256") || null;
+              if (!selected) {
+                throw new Error("No supported SASL mechanism available");
+              }
+
+              scramSession = startScramSession(this.config.username);
+              const saslInitial = createSaslInitialResponseMessage(
+                selected,
+                scramSession.clientFirstMessage
+              );
+              await this.client.send(saslInitial);
+              continue;
+            }
+
+            case AuthType.SASL_CONTINUE: {
+              if (!scramSession) {
+                throw new Error("Unexpected SASL continuation");
+              }
+              if (!auth.data) {
+                throw new Error("SASL continuation payload missing");
+              }
+              const serverFirst = auth.data
+                .toString("utf8")
+                .replace(/\u0000+$/g, "");
+              const { clientFinalMessage, serverSignature } =
+                buildScramClientFinal(
+                  scramSession,
+                  this.config.password,
+                  serverFirst
+                );
+              scramSession.expectedServerSignature = serverSignature;
+              const saslResponse = createSaslResponseMessage(clientFinalMessage);
+              await this.client.send(saslResponse);
+              continue;
+            }
+
+            case AuthType.SASL_FINAL: {
+              if (!scramSession) {
+                throw new Error("Unexpected SASL final");
+              }
+              if (!auth.data) {
+                throw new Error("SASL final payload missing");
+              }
+              const serverFinal = auth.data
+                .toString("utf8")
+                .replace(/\u0000+$/g, "");
+              verifyScramServerFinal(scramSession, serverFinal);
+              continue;
+            }
+
+            default:
+              throw new Error(`Unsupported auth type: ${auth.authType}`);
+          }
+        }
+
+        if (message.type === "E") {
+          const error = parseErrorResponse(message.payload);
+          throw new Error(error["M"] || "Authentication failed");
+        }
+
+        if (message.type === "Z") {
+          return;
         }
       }
-
-      if (message.type === "E") {
-        const error = parseErrorResponse(message.payload);
-        throw new Error(error["M"] || "Authentication failed");
-      }
-
-      if (message.type === "Z") {
-        // ReadyForQuery - connection established
-        return;
-      }
-
-      // Skip other messages like ParameterStatus, BackendKeyData
     }
   }
 
@@ -120,9 +182,7 @@ export class PostgresConnection implements DatabaseConnection {
     if (this.client.isConnected()) {
       try {
         await this.client.send(createTerminateMessage());
-      } catch {
-        // Ignore errors during disconnect
-      }
+      } catch {}
       await this.client.disconnect();
     }
     this.state = { status: "disconnected" };
@@ -149,7 +209,7 @@ export class PostgresConnection implements DatabaseConnection {
         const message = parseMessage(this.buffer);
         if (!message) break;
 
-        this.buffer = this.buffer.subarray(message.length + 1);
+        this.buffer = this.buffer.slice(message.length + 1);
 
         switch (message.type) {
           case "T": {
@@ -185,12 +245,10 @@ export class PostgresConnection implements DatabaseConnection {
           }
 
           case "I": {
-            // Empty query response
             break;
           }
 
           case "Z": {
-            // ReadyForQuery - query complete
             return {
               columns,
               rows,
@@ -254,7 +312,6 @@ export class PostgresConnection implements DatabaseConnection {
   }
 
   private getTypeName(oid: number): string {
-    // PostgreSQL type OID mapping (common types)
     const typeMap: Record<number, string> = {
       16: "boolean",
       17: "bytea",

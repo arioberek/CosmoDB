@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import type {
   ConnectionConfig,
   ConnectionState,
@@ -6,6 +7,9 @@ import type {
   QueryResult,
 } from "../lib/types";
 import { PostgresConnection } from "../lib/protocols/postgres/connection";
+import { MockConnection } from "../lib/protocols/mock/connection";
+
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 interface ActiveConnection {
   config: ConnectionConfig;
@@ -38,15 +42,19 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
     let instance: DatabaseConnection;
 
-    switch (config.type) {
-      case "postgres":
-        instance = new PostgresConnection(config);
-        break;
-      case "mysql":
-        // TODO: Implement MySQL connection
-        throw new Error("MySQL not yet implemented");
-      default:
-        throw new Error(`Unknown database type: ${config.type}`);
+    if (isExpoGo) {
+      instance = new MockConnection(config);
+    } else {
+      switch (config.type) {
+        case "postgres":
+          instance = new PostgresConnection(config);
+          break;
+        case "mysql":
+          // TODO: Implement MySQL connection
+          throw new Error("MySQL not yet implemented");
+        default:
+          throw new Error(`Unknown database type: ${config.type}`);
+      }
     }
 
     const activeConnection: ActiveConnection = {
@@ -98,9 +106,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
     try {
       await connection.instance.disconnect();
-    } catch {
-      // Ignore disconnect errors
-    }
+    } catch {}
 
     set((state) => {
       const connections = new Map(state.activeConnections);

@@ -1,5 +1,3 @@
-import TcpSocket from "react-native-tcp-socket";
-
 export interface TcpConnectionOptions {
   host: string;
   port: number;
@@ -7,7 +5,46 @@ export interface TcpConnectionOptions {
   timeout?: number;
 }
 
-type TcpSocketInstance = ReturnType<typeof TcpSocket.createConnection>;
+type TcpSocketInstance = {
+  write: (
+    data: Buffer,
+    encoding?: string,
+    cb?: (err?: Error) => void
+  ) => void;
+  on: (event: string, cb: (...args: any[]) => void) => void;
+  destroy: () => void;
+};
+
+type TcpSocketModule = {
+  createConnection: (options: Record<string, unknown>, cb?: () => void) => TcpSocketInstance;
+  connectTLS?: (options: Record<string, unknown>, cb?: () => void) => TcpSocketInstance;
+};
+
+let cachedTcpSocket: TcpSocketModule | null = null;
+let tcpSocketLoadError: Error | null = null;
+
+function getTcpSocket(): TcpSocketModule {
+  if (cachedTcpSocket) return cachedTcpSocket;
+  if (tcpSocketLoadError) throw tcpSocketLoadError;
+
+  if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+    const message =
+      "TCP sockets are not available in Expo Go. Create a development build to use database connections.";
+    tcpSocketLoadError = new Error(message);
+    throw tcpSocketLoadError;
+  }
+
+  try {
+    const mod = require("react-native-tcp-socket");
+    cachedTcpSocket = (mod?.default ?? mod) as TcpSocketModule;
+    return cachedTcpSocket;
+  } catch (error) {
+    const message =
+      "TCP sockets are not available in Expo Go. Create a development build to use database connections.";
+    tcpSocketLoadError = new Error(message);
+    throw tcpSocketLoadError;
+  }
+}
 
 export class TcpClient {
   private socket: TcpSocketInstance | null = null;
@@ -22,6 +59,14 @@ export class TcpClient {
     return new Promise((resolve, reject) => {
       const { host, port, tls = false, timeout = 10000 } = options;
 
+      let TcpSocket: TcpSocketModule;
+      try {
+        TcpSocket = getTcpSocket();
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error("TCP socket unavailable"));
+        return;
+      }
+
       const connectionOptions = {
         host,
         port,
@@ -29,7 +74,7 @@ export class TcpClient {
       };
 
       const socket = tls
-        ? TcpSocket.connectTLS(connectionOptions, () => {
+        ? TcpSocket.connectTLS?.(connectionOptions, () => {
             this.connected = true;
             resolve();
           })
@@ -37,6 +82,11 @@ export class TcpClient {
             this.connected = true;
             resolve();
           });
+
+      if (!socket) {
+        reject(new Error("TLS connections are not supported on this build"));
+        return;
+      }
 
       this.socket = socket;
 
@@ -85,8 +135,8 @@ export class TcpClient {
   async receive(expectedLength?: number): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       if (expectedLength && this.buffer.length >= expectedLength) {
-        const data = this.buffer.subarray(0, expectedLength);
-        this.buffer = this.buffer.subarray(expectedLength);
+        const data = this.buffer.slice(0, expectedLength);
+        this.buffer = this.buffer.slice(expectedLength);
         resolve(data);
         return;
       }
@@ -130,3 +180,5 @@ export class TcpClient {
     return this.connected;
   }
 }
+
+import Constants, { ExecutionEnvironment } from "expo-constants";

@@ -10,13 +10,11 @@ export async function saveConnection(
   const connections = await getConnections();
   const existingIndex = connections.findIndex((c) => c.id === connection.id);
 
-  // Store password separately in secure storage
   await SecureStore.setItemAsync(
     `${PASSWORD_PREFIX}${connection.id}`,
     connection.password
   );
 
-  // Remove password from the main config before storing
   const configWithoutPassword = { ...connection, password: "" };
 
   if (existingIndex >= 0) {

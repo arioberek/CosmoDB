@@ -14,3 +14,4 @@ web-build/
 
 # macOS
 .DS_Store
+.osgrep
