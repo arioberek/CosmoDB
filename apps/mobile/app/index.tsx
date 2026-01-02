@@ -66,7 +66,7 @@ const ConnectionItem = ({
 export default function HomeScreen() {
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const { data: connections = [], isLoading } = useQuery({
+  const { data: connections = [] } = useQuery({
     queryKey: ["connections"],
     queryFn: getConnections,
   });

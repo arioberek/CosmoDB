@@ -1,15 +1,19 @@
 {
-  "name": "cosmq",
-  "version": "1.0.0",
+  "name": "@cosmq/mobile",
+  "version": "0.1.0",
+  "private": true,
   "description": "COSMQ - Client Open-Source Mobile Query. Universal mobile database client for iOS, Android, and Web.",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
+    "dev": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "prebuild": "expo prebuild",
-    "typecheck": "tsc --noEmit"
+    "prebuild:clean": "expo prebuild --clean",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf node_modules .expo dist android/app/build ios/Pods"
   },
   "dependencies": {
     "@shopify/flash-list": "^2.2.0",
@@ -40,10 +44,10 @@
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
+    "@cosmq/tsconfig": "workspace:*",
     "@types/node": "^25.0.3",
     "@types/react": "~19.1.10",
     "@types/react-syntax-highlighter": "^15.5.13",
     "typescript": "~5.9.2"
-  },
-  "private": true
+  }
 }

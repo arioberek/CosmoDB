@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Alert,
@@ -138,16 +138,30 @@ const InfoRow = ({
   label,
   value,
   styles,
+  onPress,
 }: {
   label: string;
   value: string;
   styles: ReturnType<typeof createStyles>;
-}) => (
-  <View style={styles.infoRow}>
-    <Text style={styles.infoLabel}>{label}</Text>
-    <Text style={styles.infoValue}>{value}</Text>
-  </View>
-);
+  onPress?: () => void;
+}) =>
+  onPress ? (
+    <Pressable
+      style={({ pressed }) => [
+        styles.infoRow,
+        pressed && styles.infoRowPressed,
+      ]}
+      onPress={onPress}
+    >
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </Pressable>
+  ) : (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
 
 const TIMEOUT_OPTIONS: AppLockTimeout[] = ["immediate", "15s", "1m", "5m"];
 
@@ -155,12 +169,10 @@ const TimeoutSelector = ({
   value,
   onChange,
   styles,
-  theme,
 }: {
   value: AppLockTimeout;
   onChange: (value: AppLockTimeout) => void;
   styles: ReturnType<typeof createStyles>;
-  theme: Theme;
 }) => (
   <View style={styles.timeoutContainer}>
     <Text style={styles.timeoutLabel}>Lock after leaving app:</Text>
@@ -194,6 +206,8 @@ export default function SettingsScreen() {
   const { settings, updateSettings } = useSettingsStore();
   const appVersion = Constants.expoConfig?.version ?? "1.0.0";
   const [biometricCapability, setBiometricCapability] = useState<BiometricCapability | null>(null);
+  const versionTapCount = useRef(0);
+  const versionTapTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoRollbackInput, setAutoRollbackInput] = useState(
     settings.autoRollbackSeconds.toString()
   );
@@ -208,6 +222,14 @@ export default function SettingsScreen() {
       setAutoRollbackInput(settings.autoRollbackSeconds.toString());
     }
   }, [settings.autoRollbackSeconds, isAutoRollbackEditing]);
+
+  useEffect(() => {
+    return () => {
+      if (versionTapTimeout.current) {
+        clearTimeout(versionTapTimeout.current);
+      }
+    };
+  }, []);
 
   const biometricName = biometricCapability
     ? getBiometricDisplayName(biometricCapability.availableTypes)
@@ -271,6 +293,26 @@ export default function SettingsScreen() {
     await updateSettings({ autoRollbackSeconds: normalized });
   }, [autoRollbackInput, settings.autoRollbackSeconds, updateSettings]);
 
+  const handleVersionTap = useCallback(() => {
+    if (versionTapTimeout.current) {
+      clearTimeout(versionTapTimeout.current);
+    }
+
+    versionTapCount.current += 1;
+    if (versionTapCount.current >= 5) {
+      versionTapCount.current = 0;
+      Alert.alert(
+        "You found the Cosmos",
+        "Thanks for exploring. Keep building."
+      );
+      return;
+    }
+
+    versionTapTimeout.current = setTimeout(() => {
+      versionTapCount.current = 0;
+    }, 1200);
+  }, []);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Section title="Appearance" styles={styles}>
@@ -306,7 +348,6 @@ export default function SettingsScreen() {
               value={settings.appLockTimeout}
               onChange={(value) => updateSettings({ appLockTimeout: value })}
               styles={styles}
-              theme={theme}
             />
           </>
         ) : null}
@@ -377,7 +418,12 @@ export default function SettingsScreen() {
       </Section>
 
       <Section title="About" styles={styles}>
-        <InfoRow label="Version" value={appVersion} styles={styles} />
+        <InfoRow
+          label="Version"
+          value={appVersion}
+          styles={styles}
+          onPress={handleVersionTap}
+        />
       </Section>
     </ScrollView>
   );
@@ -473,6 +519,9 @@ const createStyles = (theme: Theme) =>
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
+    },
+    infoRowPressed: {
+      opacity: 0.7,
     },
     infoLabel: {
       color: theme.colors.textSubtle,

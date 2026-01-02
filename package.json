@@ -1,0 +1,25 @@
+{
+  "name": "cosmq",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "dev:mobile": "turbo run dev --filter=@cosmq/mobile",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "turbo": "^2.3.0"
+  },
+  "packageManager": "bun@1.2.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

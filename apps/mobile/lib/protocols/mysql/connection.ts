@@ -10,7 +10,6 @@ import type {
 import { TcpClient, sslConfigToTlsOptions } from "../../tcp/socket";
 import {
   type ColumnDefinition,
-  type HandshakeV10,
   createHandshakeResponse41,
   createQueryPacket,
   createQuitPacket,

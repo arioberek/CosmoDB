@@ -1,17 +1,42 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 build/
-.expo/
 dist/
-npm-debug.*
+.expo/
+web-build/
+
+# Turborepo
+.turbo/
+
+# Native builds
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
 *.orig.*
-web-build/
+
+# Environment
 .env
+.env.local
+.env.*.local
+
+# Debug
+npm-debug.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
 # macOS
 .DS_Store
-.osgrep
+
+# Local tooling
+.osgrep/
+
+# Logs
+*.log

@@ -16,9 +16,6 @@ import {
 } from "./bson";
 
 const OP_MSG = 2013;
-const FLAG_CHECKSUM_PRESENT = 1 << 0;
-const FLAG_MORE_TO_COME = 1 << 1;
-const FLAG_EXHAUST_ALLOWED = 1 << 16;
 
 export class MongoDBConnection implements DatabaseConnection {
   config: ConnectionConfig;
@@ -372,7 +369,6 @@ export class MongoDBConnection implements DatabaseConnection {
           const responseBuffer = this.buffer.subarray(0, messageLength);
           this.buffer = this.buffer.subarray(messageLength);
 
-          const responseFlags = responseBuffer.readUInt32LE(16);
           const sectionKind = responseBuffer[20];
 
           if (sectionKind !== 0) {

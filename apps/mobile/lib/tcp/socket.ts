@@ -92,7 +92,6 @@ export class TcpClient {
       }
 
       const useTls = typeof tls === "boolean" ? tls : tls.enabled;
-      const tlsOptions = typeof tls === "object" ? tls : {};
 
       const connectionOptions: Record<string, unknown> = {
         host,

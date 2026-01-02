@@ -3,7 +3,10 @@
     "name": "COSMQ",
     "slug": "cosmq",
     "description": "Client Open-Source Mobile Query - Universal database client for iOS, Android, and Web",
-    "version": "1.0.0",
+    "version": "0.1.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -18,14 +21,16 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cosmq.app"
+      "bundleIdentifier": "com.cosmq.app",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "com.cosmq.app"
+      "package": "com.cosmq.app",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png",

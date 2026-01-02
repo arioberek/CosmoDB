@@ -183,7 +183,7 @@ export const formatConnectionError = (error: unknown, dbType: DatabaseType): str
   return rawMessage;
 };
 
-export const formatQueryError = (error: unknown, dbType: DatabaseType): string => {
+export const formatQueryError = (error: unknown, _dbType: DatabaseType): string => {
   const rawMessage = error instanceof Error ? error.message : String(error);
 
   const syntaxPatterns = [
