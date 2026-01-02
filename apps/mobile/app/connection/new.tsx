@@ -182,6 +182,16 @@ const pickDatabaseFile = async (): Promise<string | null> => {
   }
 };
 
+/**
+ * Render the "New Connection" screen allowing users to create, test, and save database connections.
+ *
+ * The screen provides inputs for connection name, type, host, port, database (or SQLite file),
+ * credentials, SSL toggle, and an optional color tag. It supports parsing a connection URL to
+ * prefill fields, selecting and validating SQLite database files, testing a connection before saving,
+ * and persisting the connection to storage.
+ *
+ * @returns The React element for the New Connection screen.
+ */
 export default function NewConnectionScreen() {
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);

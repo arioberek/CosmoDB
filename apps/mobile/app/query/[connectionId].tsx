@@ -489,6 +489,13 @@ const SqlEditor = ({
   );
 };
 
+/**
+ * Screen component that provides an SQL editor, execution controls, and result display with support for transactions, table/schema inspection, query history, and saved snippets.
+ *
+ * Renders an editor with syntax highlighting and autocomplete, controls to run queries (with optional transactional wrapping and auto-rollback), panels for tables/columns, modals for history and snippets, and a results area with copy-to-clipboard and error handling.
+ *
+ * @returns The rendered Query screen as a React element
+ */
 export default function QueryScreen() {
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);

@@ -200,6 +200,11 @@ const TimeoutSelector = ({
   </View>
 );
 
+/**
+ * Render the app Settings screen with sections for Appearance, Security, Safety, Editor, Feedback, and About; manages local UI state, biometric checks, and updates to the settings store.
+ *
+ * @returns The Settings screen React element.
+ */
 export default function SettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
