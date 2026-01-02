@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -27,12 +27,18 @@ export const LockScreen = ({ onUnlock }: LockScreenProps) => {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const hasTriedAutoAuth = useRef(false);
+  const onUnlockRef = useRef(onUnlock);
+  
+  onUnlockRef.current = onUnlock;
 
   useEffect(() => {
     checkBiometricCapability().then(setCapability);
   }, []);
 
   const handleUnlock = useCallback(async () => {
+    if (isAuthenticating) return;
+    
     setError(null);
     setWarning(null);
     setIsAuthenticating(true);
@@ -41,7 +47,7 @@ export const LockScreen = ({ onUnlock }: LockScreenProps) => {
       const result = await authenticate();
 
       if (result.success) {
-        onUnlock();
+        onUnlockRef.current();
         return;
       }
 
@@ -53,10 +59,11 @@ export const LockScreen = ({ onUnlock }: LockScreenProps) => {
     } finally {
       setIsAuthenticating(false);
     }
-  }, [onUnlock]);
+  }, [isAuthenticating]);
 
   useEffect(() => {
-    if (capability?.isEnrolled) {
+    if (capability?.isEnrolled && !hasTriedAutoAuth.current) {
+      hasTriedAutoAuth.current = true;
       handleUnlock();
     }
   }, [capability?.isEnrolled, handleUnlock]);

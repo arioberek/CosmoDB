@@ -70,8 +70,6 @@ export async function authenticate(promptMessage?: string): Promise<AuthResult> 
       cancelLabel: "Cancel",
       disableDeviceFallback: false,
       fallbackLabel: "Use Passcode",
-      biometricsSecurityLevel: "strong",
-      requireConfirmation: true,
     });
 
     if (result.success) {
@@ -88,7 +86,7 @@ export async function authenticate(promptMessage?: string): Promise<AuthResult> 
     if (result.error === "lockout") {
       return {
         success: false,
-        error: "Too many failed attempts. Please try again later or use device passcode.",
+        error: "Too many failed attempts. Please try again later.",
       };
     }
 

@@ -31,7 +31,8 @@ export default function RootLayout() {
   const { loadSettings, settings, isLoaded: settingsLoaded } = useSettingsStore();
 
   const [isLocked, setIsLocked] = useState(true);
-  const [hasAuthenticated, setHasAuthenticated] = useState(false);
+  const hasAuthenticatedRef = useRef(false);
+  const lastUnlockTime = useRef<number>(0);
   const backgroundTimestamp = useRef<number | null>(null);
 
   useEffect(() => {
@@ -49,14 +50,14 @@ export default function RootLayout() {
 
     if (!settings.appLockEnabled) {
       setIsLocked(false);
-      setHasAuthenticated(false);
+      hasAuthenticatedRef.current = false;
       return;
     }
 
-    if (!hasAuthenticated) {
+    if (!hasAuthenticatedRef.current) {
       setIsLocked(true);
     }
-  }, [settings.appLockEnabled, settingsLoaded, hasAuthenticated]);
+  }, [settings.appLockEnabled, settingsLoaded]);
 
   const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
     if (!settings.appLockEnabled) return;
@@ -64,10 +65,17 @@ export default function RootLayout() {
     if (nextAppState === "background" || nextAppState === "inactive") {
       backgroundTimestamp.current = Date.now();
     } else if (nextAppState === "active" && backgroundTimestamp.current !== null) {
+      const timeSinceUnlock = Date.now() - lastUnlockTime.current;
+      if (timeSinceUnlock < 2000) {
+        backgroundTimestamp.current = null;
+        return;
+      }
+
       const timeInBackground = Date.now() - backgroundTimestamp.current;
       const timeout = APP_LOCK_TIMEOUT_MS[settings.appLockTimeout];
 
       if (timeInBackground >= timeout) {
+        hasAuthenticatedRef.current = false;
         setIsLocked(true);
       }
 
@@ -81,8 +89,9 @@ export default function RootLayout() {
   }, [handleAppStateChange]);
 
   const handleUnlock = useCallback(() => {
+    hasAuthenticatedRef.current = true;
+    lastUnlockTime.current = Date.now();
     setIsLocked(false);
-    setHasAuthenticated(true);
   }, []);
 
   if (!fontsLoaded || !settingsLoaded) {
