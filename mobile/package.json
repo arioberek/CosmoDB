@@ -1,6 +1,7 @@
 {
   "name": "cosmodb",
   "version": "1.0.0",
+  "description": "CosmoDB - Client Open-Source Mobile Optimized DataBase. Universal mobile database client for iOS, Android, and Web.",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",

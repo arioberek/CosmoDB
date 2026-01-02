@@ -1,10 +1,10 @@
-# CosmoDB Mobile - Database Client
+# CosmoDB - Client Open-Source Mobile Optimized DataBase
 
-A universal mobile database client for iOS, Android, and Web. Connect directly to PostgreSQL and MySQL/MariaDB databases using native TCP sockets, just like DBeaver or TablePlus, but for your phone.
+**CosmoDB** (**C**lient **O**pen-**S**ource **M**obile **O**ptimized **D**ata**B**ase) is a universal mobile database client for iOS, Android, and Web. Connect directly to PostgreSQL and MySQL/MariaDB databases using native TCP sockets, just like DBeaver or TablePlus, but for your phone.
 
 ## Overview
 
-CosmoDB Mobile is a full-featured database client that brings professional database management to your mobile device. Instead of relying on REST APIs or web dashboards, this app connects directly to your database servers using the native database wire protocols.
+CosmoDB is a full-featured database client that brings professional database management to your mobile device. Instead of relying on REST APIs or web dashboards, this app connects directly to your database servers using the native database wire protocols.
 
 **Key Highlights:**
 - 🔌 Direct TCP connection to databases (no intermediate API)
