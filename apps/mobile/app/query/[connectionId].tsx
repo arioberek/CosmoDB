@@ -554,12 +554,17 @@ export default function QueryScreen() {
   };
 
   const loadTables = async () => {
-    if (!connection?.instance) return;
+    if (!connection?.instance) {
+      console.warn("[loadTables] No connection instance");
+      return;
+    }
     setLoadingTables(true);
     try {
       const tableList = await connection.instance.listTables();
+      console.log("[loadTables] Loaded tables:", tableList.length);
       setTables(tableList);
-    } catch {
+    } catch (err) {
+      console.error("[loadTables] Error:", err);
       Alert.alert("Error", "Failed to load tables");
     } finally {
       setLoadingTables(false);
@@ -879,7 +884,9 @@ export default function QueryScreen() {
             <Pressable
               style={styles.tablesToggle}
               onPress={() => {
-                if (!showTables && tables.length === 0) loadTables();
+                if (!showTables) {
+                  loadTables();
+                }
                 setShowTables(!showTables);
               }}
             >
@@ -1534,7 +1541,9 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderRadius: 8,
     marginBottom: 12,
-    maxHeight: 180,
+    minHeight: 120,
+    maxHeight: 220,
+    overflow: 'hidden',
   },
   tablesPanelHeader: {
     flexDirection: 'row',
@@ -1554,7 +1563,8 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 12,
   },
   tablesList: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
   },
   tablesEmpty: {
     color: theme.colors.textMuted,
