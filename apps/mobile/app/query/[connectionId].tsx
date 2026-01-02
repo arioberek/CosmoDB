@@ -905,6 +905,12 @@ export default function QueryScreen() {
             >
               <Text style={styles.snippetsToggleText}>Snippets</Text>
             </Pressable>
+            <Pressable
+              style={styles.saveSnippetToggle}
+              onPress={handleSaveSnippet}
+            >
+              <Text style={styles.saveSnippetToggleText}>+ Save</Text>
+            </Pressable>
           </View>
           <View style={styles.runRowRight}>
             {transactionState.active && (
@@ -1147,19 +1153,14 @@ export default function QueryScreen() {
           <Pressable style={styles.dialogContainer} onPress={(e) => e.stopPropagation()}>
             <View style={styles.dialogHeader}>
               <Text style={styles.dialogTitle}>Saved Snippets</Text>
-              <View style={styles.dialogHeaderActions}>
-                <Pressable onPress={handleSaveSnippet} hitSlop={8}>
-                  <Text style={styles.dialogSaveText}>+ Save</Text>
-                </Pressable>
-                <Pressable onPress={() => setShowSnippets(false)} hitSlop={8}>
-                  <Text style={styles.dialogCloseText}>✕</Text>
-                </Pressable>
-              </View>
+              <Pressable onPress={() => setShowSnippets(false)} hitSlop={8}>
+                <Text style={styles.dialogCloseText}>✕</Text>
+              </Pressable>
             </View>
             <ScrollView style={styles.dialogList} contentContainerStyle={styles.dialogListContent}>
               {snippets.length === 0 ? (
                 <Text style={styles.dialogEmpty}>
-                  No snippets yet. Tap "+ Save" to save your query.
+                  No snippets yet. Use "+ Save" button to save your query.
                 </Text>
               ) : (
                 snippets.map((snippet) => (
@@ -1444,20 +1445,10 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  dialogHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
   dialogCloseText: {
     color: theme.colors.textMuted,
     fontSize: 18,
     fontWeight: '400',
-  },
-  dialogSaveText: {
-    color: theme.colors.success,
-    fontSize: 14,
-    fontWeight: '600',
   },
   dialogList: {
     flexGrow: 0,
@@ -1505,6 +1496,19 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     color: theme.colors.text,
     fontSize: 12,
     fontWeight: '500',
+  },
+  saveSnippetToggle: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.success,
+  },
+  saveSnippetToggleText: {
+    color: theme.colors.success,
+    fontSize: 12,
+    fontWeight: '600',
   },
   snippetItem: {
     padding: 14,
