@@ -875,54 +875,58 @@ export default function QueryScreen() {
           theme={theme}
         />
         <View style={styles.runRow}>
-          <Pressable
-            style={styles.tablesToggle}
-            onPress={() => {
-              if (!showTables && tables.length === 0) loadTables();
-              setShowTables(!showTables);
-            }}
-          >
-            <Text style={styles.tablesToggleText}>
-              {showTables ? "Hide Tables" : "Tables"}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={styles.historyToggle}
-            onPress={() => {
-              loadHistory();
-              setShowHistory(true);
-            }}
-          >
-            <Text style={styles.historyToggleText}>History</Text>
-          </Pressable>
-          <Pressable
-            style={styles.snippetsToggle}
-            onPress={() => {
-              loadSnippets();
-              setShowSnippets(true);
-            }}
-          >
-            <Text style={styles.snippetsToggleText}>Snippets</Text>
-          </Pressable>
-          {transactionState.active && (
+          <View style={styles.runRowLeft}>
             <Pressable
-              style={styles.transactionChip}
-              onPress={() => setShowTransactionBanner(true)}
+              style={styles.tablesToggle}
+              onPress={() => {
+                if (!showTables && tables.length === 0) loadTables();
+                setShowTables(!showTables);
+              }}
             >
-              <Text style={styles.transactionChipText}>{transactionChipLabel}</Text>
+              <Text style={styles.tablesToggleText}>
+                {showTables ? "Hide Tables" : "Tables"}
+              </Text>
             </Pressable>
-          )}
-          <Pressable
-            style={[styles.runButton, executing && styles.runButtonDisabled]}
-            onPress={handleExecute}
-            disabled={executing}
-          >
-            {executing ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.runButtonText}>Run</Text>
+            <Pressable
+              style={styles.historyToggle}
+              onPress={() => {
+                loadHistory();
+                setShowHistory(true);
+              }}
+            >
+              <Text style={styles.historyToggleText}>History</Text>
+            </Pressable>
+            <Pressable
+              style={styles.snippetsToggle}
+              onPress={() => {
+                loadSnippets();
+                setShowSnippets(true);
+              }}
+            >
+              <Text style={styles.snippetsToggleText}>Snippets</Text>
+            </Pressable>
+          </View>
+          <View style={styles.runRowRight}>
+            {transactionState.active && (
+              <Pressable
+                style={styles.transactionChip}
+                onPress={() => setShowTransactionBanner(true)}
+              >
+                <Text style={styles.transactionChipText}>{transactionChipLabel}</Text>
+              </Pressable>
             )}
-          </Pressable>
+            <Pressable
+              style={[styles.runButton, executing && styles.runButtonDisabled]}
+              onPress={handleExecute}
+              disabled={executing}
+            >
+              {executing ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.runButtonText}>Run</Text>
+              )}
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -1366,17 +1370,25 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   },
   runRow: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     alignItems: "center",
-    gap: 10,
     marginTop: 12,
+  },
+  runRowLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  runRowRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   tablesToggle: {
     backgroundColor: theme.colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 6,
-    marginRight: 'auto',
   },
   tablesToggleText: {
     color: theme.colors.text,
@@ -1403,6 +1415,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     backgroundColor: theme.colors.background,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
+    minHeight: 300,
     maxHeight: '70%',
   },
   historyModalHeader: {
@@ -1475,6 +1488,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     backgroundColor: theme.colors.background,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
+    minHeight: 300,
     maxHeight: '70%',
   },
   snippetsModalHeader: {
