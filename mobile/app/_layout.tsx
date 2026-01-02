@@ -4,10 +4,13 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useTheme } from "../hooks/useTheme";
 import { useSettingsStore } from "../stores/settings";
+import { LockScreen } from "../components/lock-screen";
+import { APP_LOCK_TIMEOUT_MS } from "../lib/settings";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -25,21 +28,68 @@ export default function RootLayout() {
     JetBrainsMono: require("../assets/fonts/JetBrainsMono-Regular.ttf"),
   });
   const theme = useTheme();
-  const loadSettings = useSettingsStore((state) => state.loadSettings);
+  const { loadSettings, settings, isLoaded: settingsLoaded } = useSettingsStore();
+
+  const [isLocked, setIsLocked] = useState(true);
+  const [hasAuthenticated, setHasAuthenticated] = useState(false);
+  const backgroundTimestamp = useRef<number | null>(null);
 
   useEffect(() => {
-    if (fontsLoaded) {
+    if (fontsLoaded && settingsLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded]);
+  }, [fontsLoaded, settingsLoaded]);
 
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
 
-  if (!fontsLoaded) {
+  useEffect(() => {
+    if (!settingsLoaded) return;
+
+    if (!settings.appLockEnabled) {
+      setIsLocked(false);
+      setHasAuthenticated(false);
+      return;
+    }
+
+    if (!hasAuthenticated) {
+      setIsLocked(true);
+    }
+  }, [settings.appLockEnabled, settingsLoaded, hasAuthenticated]);
+
+  const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
+    if (!settings.appLockEnabled) return;
+
+    if (nextAppState === "background" || nextAppState === "inactive") {
+      backgroundTimestamp.current = Date.now();
+    } else if (nextAppState === "active" && backgroundTimestamp.current !== null) {
+      const timeInBackground = Date.now() - backgroundTimestamp.current;
+      const timeout = APP_LOCK_TIMEOUT_MS[settings.appLockTimeout];
+
+      if (timeInBackground >= timeout) {
+        setIsLocked(true);
+      }
+
+      backgroundTimestamp.current = null;
+    }
+  }, [settings.appLockEnabled, settings.appLockTimeout]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    return () => subscription.remove();
+  }, [handleAppStateChange]);
+
+  const handleUnlock = useCallback(() => {
+    setIsLocked(false);
+    setHasAuthenticated(true);
+  }, []);
+
+  if (!fontsLoaded || !settingsLoaded) {
     return null;
   }
+
+  const showLockScreen = settings.appLockEnabled && isLocked;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -80,6 +130,7 @@ export default function RootLayout() {
             options={{ title: "Settings" }}
           />
         </Stack>
+        {showLockScreen ? <LockScreen onUnlock={handleUnlock} /> : null}
       </SafeAreaProvider>
     </QueryClientProvider>
   );

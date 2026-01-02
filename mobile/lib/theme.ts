@@ -13,6 +13,8 @@ export type Theme = {
     primaryMuted: string;
     success: string;
     successMuted: string;
+    warning: string;
+    warningMuted: string;
     danger: string;
     dangerMuted: string;
     accent: string;
@@ -37,6 +39,8 @@ const dark: Theme = {
     primaryMuted: "#4f46e520",
     success: "#22c55e",
     successMuted: "#22c55e20",
+    warning: "#f59e0b",
+    warningMuted: "#f59e0b20",
     danger: "#ef4444",
     dangerMuted: "#dc262620",
     accent: "#c678dd",
@@ -61,6 +65,8 @@ const light: Theme = {
     primaryMuted: "#4f46e510",
     success: "#16a34a",
     successMuted: "#16a34a1a",
+    warning: "#d97706",
+    warningMuted: "#d9770612",
     danger: "#dc2626",
     dangerMuted: "#dc262612",
     accent: "#7c3aed",

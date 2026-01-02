@@ -1,6 +1,6 @@
 import { FlashList } from "@shopify/flash-list";
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +17,7 @@ import { useConnectionStore } from "../../stores/connection";
 import { useSettingsStore } from "../../stores/settings";
 import { useTheme } from "../../hooks/useTheme";
 import type { Theme } from "../../lib/theme";
+import { normalizeAutoRollbackSeconds } from "../../lib/settings";
 
 const SQL_KEYWORDS = [
   'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER',
@@ -160,6 +161,16 @@ const findDangerousKeyword = (sql: string): string | null => {
     new RegExp(`\\b(${DANGEROUS_KEYWORDS.join("|")})\\b`)
   );
   return match ? match[1] : null;
+};
+
+const formatCountdown = (seconds: number): string => {
+  const safe = Math.max(0, seconds);
+  const minutes = Math.floor(safe / 60);
+  const remaining = safe % 60;
+  if (minutes > 0) {
+    return `${minutes}:${remaining.toString().padStart(2, "0")}`;
+  }
+  return `${remaining}s`;
 };
 
 type SqlContext = 'select' | 'from' | 'where' | 'orderby' | 'groupby' | 'insert' | 'update' | 'set' | 'join' | 'default';
@@ -476,10 +487,56 @@ export default function QueryScreen() {
     active: boolean;
     statements: TransactionStatements | null;
   }>({ active: false, statements: null });
+  const [transactionDeadline, setTransactionDeadline] = useState<number | null>(
+    null
+  );
+  const [transactionTimeLeft, setTransactionTimeLeft] = useState(0);
+  const [showTransactionBanner, setShowTransactionBanner] = useState(true);
+  const autoRollbackTriggered = useRef(false);
   const settings = useSettingsStore((state) => state.settings);
 
   const { activeConnections, executeQuery } = useConnectionStore();
   const connection = connectionId ? activeConnections.get(connectionId) : null;
+  const showAutoRollbackCountdown =
+    settings.autoRollbackEnabled && transactionDeadline !== null;
+  const transactionChipLabel = showAutoRollbackCountdown
+    ? `Txn ${formatCountdown(transactionTimeLeft)}`
+    : "Txn Manual";
+
+  const finalizeTransaction = useCallback(
+    async (action: "commit" | "rollback", auto = false) => {
+      if (
+        !transactionState.active ||
+        !transactionState.statements ||
+        !connectionId
+      ) {
+        return;
+      }
+
+      setExecuting(true);
+      if (!auto) {
+        setError(null);
+      }
+
+      try {
+        await executeQuery(
+          connectionId,
+          action === "commit"
+            ? transactionState.statements.commit
+            : transactionState.statements.rollback
+        );
+        setTransactionState({ active: false, statements: null });
+        setTransactionDeadline(null);
+        setTransactionTimeLeft(0);
+        setShowTransactionBanner(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Transaction failed");
+      } finally {
+        setExecuting(false);
+      }
+    },
+    [connectionId, executeQuery, transactionState.active, transactionState.statements]
+  );
 
   const executeWithTransaction = async (sql: string) => {
     if (!connectionId || !connection) return;
@@ -504,10 +561,22 @@ export default function QueryScreen() {
     setResult(null);
 
     try {
+      const autoRollbackSeconds = settings.autoRollbackEnabled
+        ? normalizeAutoRollbackSeconds(settings.autoRollbackSeconds)
+        : null;
       await executeQuery(connectionId, transaction.begin);
       const queryResult = await executeQuery(connectionId, sql);
       setResult(queryResult);
       setTransactionState({ active: true, statements: transaction });
+      if (autoRollbackSeconds) {
+        setTransactionDeadline(Date.now() + autoRollbackSeconds * 1000);
+        setTransactionTimeLeft(autoRollbackSeconds);
+      } else {
+        setTransactionDeadline(null);
+        setTransactionTimeLeft(0);
+      }
+      setShowTransactionBanner(true);
+      autoRollbackTriggered.current = false;
     } catch (err) {
       try {
         await executeQuery(connectionId, transaction.rollback);
@@ -518,28 +587,57 @@ export default function QueryScreen() {
     }
   };
 
-  const finalizeTransaction = async (action: "commit" | "rollback") => {
-    if (!transactionState.active || !transactionState.statements || !connectionId) {
+  useEffect(() => {
+    if (!transactionState.active || !transactionDeadline || !settings.autoRollbackEnabled) {
+      setTransactionTimeLeft(0);
+      autoRollbackTriggered.current = false;
       return;
     }
 
-    setExecuting(true);
-    setError(null);
-
-    try {
-      await executeQuery(
-        connectionId,
-        action === "commit"
-          ? transactionState.statements.commit
-          : transactionState.statements.rollback
+    const tick = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((transactionDeadline - Date.now()) / 1000)
       );
-      setTransactionState({ active: false, statements: null });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Transaction failed");
-    } finally {
-      setExecuting(false);
+      setTransactionTimeLeft(remaining);
+      if (remaining <= 0 && !autoRollbackTriggered.current && !executing) {
+        autoRollbackTriggered.current = true;
+        finalizeTransaction("rollback", true);
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [
+    transactionState.active,
+    transactionDeadline,
+    executing,
+    finalizeTransaction,
+    settings.autoRollbackEnabled,
+  ]);
+
+  useEffect(() => {
+    if (!transactionState.active) {
+      return;
     }
-  };
+
+    if (!settings.autoRollbackEnabled) {
+      setTransactionDeadline(null);
+      setTransactionTimeLeft(0);
+      autoRollbackTriggered.current = false;
+      return;
+    }
+
+    const normalized = normalizeAutoRollbackSeconds(settings.autoRollbackSeconds);
+    setTransactionDeadline(Date.now() + normalized * 1000);
+    setTransactionTimeLeft(normalized);
+    autoRollbackTriggered.current = false;
+  }, [
+    transactionState.active,
+    settings.autoRollbackEnabled,
+    settings.autoRollbackSeconds,
+  ]);
 
   const handleExecute = async () => {
     const trimmed = query.trim();
@@ -602,26 +700,45 @@ export default function QueryScreen() {
           styles={styles}
           theme={theme}
         />
-        <Pressable
-          style={[styles.runButton, executing && styles.runButtonDisabled]}
-          onPress={handleExecute}
-          disabled={executing}
-        >
-          {executing ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.runButtonText}>Run</Text>
+        <View style={styles.runRow}>
+          {transactionState.active && (
+            <Pressable
+              style={styles.transactionChip}
+              onPress={() => setShowTransactionBanner(true)}
+            >
+              <Text style={styles.transactionChipText}>{transactionChipLabel}</Text>
+            </Pressable>
           )}
-        </Pressable>
+          <Pressable
+            style={[styles.runButton, executing && styles.runButtonDisabled]}
+            onPress={handleExecute}
+            disabled={executing}
+          >
+            {executing ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.runButtonText}>Run</Text>
+            )}
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.resultsContainer}>
-        {transactionState.active && (
+        {transactionState.active && showTransactionBanner && (
           <View style={styles.transactionBanner}>
-            <View style={styles.transactionText}>
+            <View style={styles.transactionHeader}>
               <Text style={styles.transactionTitle}>Transaction Pending</Text>
+              <Pressable onPress={() => setShowTransactionBanner(false)}>
+                <Text style={styles.transactionHideText}>Hide</Text>
+              </Pressable>
+            </View>
+            <View style={styles.transactionText}>
               <Text style={styles.transactionDescription}>
-                Commit to keep changes or rollback to undo them.
+                {showAutoRollbackCountdown
+                  ? `Auto-rollback in ${formatCountdown(
+                      transactionTimeLeft
+                    )}. Commit to keep changes or rollback to undo them.`
+                  : "Auto-rollback is off. Commit to keep changes or rollback to undo them."}
               </Text>
             </View>
             <View style={styles.transactionActions}>
@@ -871,6 +988,13 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+  runRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 12,
+  },
   resultsContainer: {
     flex: 1,
     padding: 16,
@@ -970,12 +1094,22 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     borderColor: theme.colors.border,
     gap: 12,
   },
+  transactionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   transactionText: {
     gap: 4,
   },
   transactionTitle: {
     color: theme.colors.text,
     fontSize: 14,
+    fontWeight: "600",
+  },
+  transactionHideText: {
+    color: theme.colors.textSubtle,
+    fontSize: 12,
     fontWeight: "600",
   },
   transactionDescription: {
@@ -1012,5 +1146,18 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   },
   transactionButtonDisabled: {
     opacity: 0.6,
+  },
+  transactionChip: {
+    backgroundColor: theme.colors.surfaceAlt,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  transactionChipText: {
+    color: theme.colors.textSubtle,
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
