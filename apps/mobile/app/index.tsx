@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useMemo } from "react";
 import { getConnections } from "../lib/storage/connections";
-import type { ConnectionConfig } from "../lib/types";
+import { CONNECTION_COLORS, type ConnectionConfig } from "../lib/types";
 import { useConnectionStore } from "../stores/connection";
 import { useTheme } from "../hooks/useTheme";
 import type { Theme } from "../lib/theme";
@@ -46,7 +46,7 @@ const ConnectionItem = ({
       ]}
       onPress={handlePress}
     >
-      {connection.color && (
+      {connection.color && CONNECTION_COLORS.includes(connection.color) && (
         <View
           style={[styles.colorIndicator, { backgroundColor: connection.color }]}
         />
