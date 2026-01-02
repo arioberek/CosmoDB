@@ -627,10 +627,19 @@ export default function QueryScreen() {
   const confirmSaveSnippet = async () => {
     const trimmedName = snippetName.trim();
     if (!trimmedName) return;
-    await saveSnippet({ name: trimmedName, query: query.trim() });
-    haptic.success();
-    setShowSaveSnippetPrompt(false);
-    Alert.alert("Saved", "Snippet saved successfully");
+    try {
+      await saveSnippet({ name: trimmedName, query: query.trim() });
+      haptic.success();
+      setShowSaveSnippetPrompt(false);
+      Alert.alert("Saved", "Snippet saved successfully");
+    } catch (err) {
+      haptic.error();
+      console.error("[confirmSaveSnippet] Failed to save snippet:", err);
+      Alert.alert(
+        "Save Failed",
+        err instanceof Error ? err.message : "Could not save snippet"
+      );
+    }
   };
 
   const handleDeleteSnippet = async (id: string) => {
@@ -640,8 +649,16 @@ export default function QueryScreen() {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          await deleteSnippet(id);
-          loadSnippets();
+          try {
+            await deleteSnippet(id);
+            loadSnippets();
+          } catch (err) {
+            console.error("[handleDeleteSnippet] Failed to delete snippet:", err);
+            Alert.alert(
+              "Delete Failed",
+              err instanceof Error ? err.message : "Could not delete snippet"
+            );
+          }
         },
       },
     ]);

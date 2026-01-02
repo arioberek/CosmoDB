@@ -11,6 +11,33 @@ export interface QueryHistoryItem {
   timestamp: number;
 }
 
+class HistoryMutex {
+  private _locked = false;
+  private _queue: (() => void)[] = [];
+
+  async acquire(): Promise<void> {
+    if (!this._locked) {
+      this._locked = true;
+      return;
+    }
+
+    return new Promise((resolve) => {
+      this._queue.push(resolve);
+    });
+  }
+
+  release(): void {
+    const next = this._queue.shift();
+    if (next) {
+      next();
+    } else {
+      this._locked = false;
+    }
+  }
+}
+
+const historyMutex = new HistoryMutex();
+
 export const getQueryHistory = async (): Promise<QueryHistoryItem[]> => {
   try {
     const data = await SecureStore.getItemAsync(HISTORY_KEY);
@@ -24,6 +51,7 @@ export const getQueryHistory = async (): Promise<QueryHistoryItem[]> => {
 export const addToQueryHistory = async (
   item: Omit<QueryHistoryItem, "id" | "timestamp">
 ): Promise<void> => {
+  await historyMutex.acquire();
   try {
     const history = await getQueryHistory();
     const newItem: QueryHistoryItem = {
@@ -60,14 +88,19 @@ export const addToQueryHistory = async (
     );
   } catch (err) {
     console.error("[addToQueryHistory] Failed to add query to history:", err);
+  } finally {
+    historyMutex.release();
   }
 };
 
 export const clearQueryHistory = async (): Promise<void> => {
+  await historyMutex.acquire();
   try {
     await SecureStore.deleteItemAsync(HISTORY_KEY);
   } catch (err) {
     console.error("[clearQueryHistory] Failed to clear query history:", err);
     throw err;
+  } finally {
+    historyMutex.release();
   }
 };
