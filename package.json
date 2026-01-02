@@ -6,7 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "dev:mobile": "turbo run dev --filter=@cosmq/mobile",
+    "dev:mobile": "bun run --cwd apps/mobile dev",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "clean": "turbo run clean && rm -rf node_modules",
