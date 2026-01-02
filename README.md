@@ -1,6 +1,10 @@
-# CosmoDB - Client Open-Source Mobile Optimized DataBase
+# COSMQ - Open-source Mobile Database Client
 
-**CosmoDB** (**C**lient **O**pen-**S**ource **M**obile **O**ptimized **D**ata**B**ase) is a universal mobile database client for iOS, Android, and Web. Connect directly to PostgreSQL and MySQL/MariaDB databases using native TCP sockets, just like DBeaver or TablePlus, but for your phone.
+**COSMQ** (**C**lient **O**pen-**S**ource **M**obile **Q**uery) is a universal mobile database client for iOS, Android, and Web.
+
+*Pronounced "cosmic"*
+
+Connect directly to PostgreSQL and MySQL/MariaDB databases using native TCP sockets, just like DBeaver or TablePlus, but for your phone.
 
 ## Overview
 
