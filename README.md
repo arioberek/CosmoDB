@@ -59,6 +59,8 @@ CosmoDB Mobile is a full-featured database client that brings professional datab
 ### Installation
 
 ```bash
+cd mobile
+
 # Install dependencies
 bun install
 
