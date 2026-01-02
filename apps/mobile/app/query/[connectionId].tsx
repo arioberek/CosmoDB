@@ -522,6 +522,9 @@ export default function QueryScreen() {
   const [showSnippets, setShowSnippets] = useState(false);
   const [snippets, setSnippets] = useState<QuerySnippet[]>([]);
 
+  const [showSaveSnippetPrompt, setShowSaveSnippetPrompt] = useState(false);
+  const [snippetName, setSnippetName] = useState("");
+
   const { activeConnections, executeQuery } = useConnectionStore();
   const connection = connectionId ? activeConnections.get(connectionId) : null;
   const showAutoRollbackCountdown =
@@ -604,22 +607,23 @@ export default function QueryScreen() {
     setShowSnippets(false);
   };
 
-  const handleSaveSnippet = async () => {
+  const handleSaveSnippet = () => {
     const trimmed = query.trim();
     if (!trimmed) {
       Alert.alert("Error", "Enter a query first");
       return;
     }
-    Alert.prompt(
-      "Save Snippet",
-      "Enter a name for this snippet:",
-      async (name) => {
-        if (!name?.trim()) return;
-        await saveSnippet({ name: name.trim(), query: trimmed });
-        haptic.success();
-        Alert.alert("Saved", "Snippet saved successfully");
-      }
-    );
+    setSnippetName("");
+    setShowSaveSnippetPrompt(true);
+  };
+
+  const confirmSaveSnippet = async () => {
+    const trimmedName = snippetName.trim();
+    if (!trimmedName) return;
+    await saveSnippet({ name: trimmedName, query: query.trim() });
+    haptic.success();
+    setShowSaveSnippetPrompt(false);
+    Alert.alert("Saved", "Snippet saved successfully");
   };
 
   const handleDeleteSnippet = async (id: string) => {
@@ -1139,6 +1143,37 @@ export default function QueryScreen() {
                 ))
               )}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showSaveSnippetPrompt}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSaveSnippetPrompt(false)}
+      >
+        <View style={styles.saveSnippetModal}>
+          <View style={styles.saveSnippetModalContent}>
+            <Text style={styles.saveSnippetModalTitle}>Save Snippet</Text>
+            <TextInput
+              style={styles.saveSnippetInput}
+              value={snippetName}
+              onChangeText={setSnippetName}
+              placeholder="Snippet name..."
+              placeholderTextColor={theme.colors.placeholder}
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.saveSnippetActions}>
+              <Pressable onPress={() => setShowSaveSnippetPrompt(false)}>
+                <Text style={styles.saveSnippetCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={confirmSaveSnippet}>
+                <Text style={styles.saveSnippetSaveText}>Save</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1732,5 +1767,54 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     color: theme.colors.textSubtle,
     fontSize: 12,
     fontWeight: "600",
+  },
+  saveSnippetModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  saveSnippetModalContent: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 320,
+  },
+  saveSnippetModalTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  saveSnippetInput: {
+    backgroundColor: theme.colors.surface,
+    padding: 12,
+    borderRadius: 8,
+    color: theme.colors.text,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  saveSnippetActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 16,
+    marginTop: 16,
+  },
+  saveSnippetCancelText: {
+    color: theme.colors.textSubtle,
+    fontSize: 14,
+    fontWeight: '500',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  saveSnippetSaveText: {
+    color: theme.colors.success,
+    fontSize: 14,
+    fontWeight: '600',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
 });

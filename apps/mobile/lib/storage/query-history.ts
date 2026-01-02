@@ -15,7 +15,8 @@ export const getQueryHistory = async (): Promise<QueryHistoryItem[]> => {
   try {
     const data = await SecureStore.getItemAsync(HISTORY_KEY);
     return data ? JSON.parse(data) : [];
-  } catch {
+  } catch (err) {
+    console.error("[getQueryHistory] Failed to read query history:", err);
     return [];
   }
 };
@@ -57,10 +58,16 @@ export const addToQueryHistory = async (
       HISTORY_KEY,
       JSON.stringify(history.slice(0, MAX_HISTORY))
     );
-  } catch {
+  } catch (err) {
+    console.error("[addToQueryHistory] Failed to add query to history:", err);
   }
 };
 
 export const clearQueryHistory = async (): Promise<void> => {
-  await SecureStore.deleteItemAsync(HISTORY_KEY);
+  try {
+    await SecureStore.deleteItemAsync(HISTORY_KEY);
+  } catch (err) {
+    console.error("[clearQueryHistory] Failed to clear query history:", err);
+    throw err;
+  }
 };
