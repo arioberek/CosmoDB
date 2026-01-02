@@ -1,6 +1,6 @@
 {
   "name": "@cosmq/mobile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "COSMQ - Client Open-Source Mobile Query. Universal mobile database client for iOS, Android, and Web.",
   "main": "expo-router/entry",
