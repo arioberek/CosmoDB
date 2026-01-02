@@ -200,6 +200,11 @@ const TimeoutSelector = ({
   </View>
 );
 
+/**
+ * Render the app Settings screen with sections for Appearance, Security, Safety, Editor, Feedback, and About; manages local UI state, biometric checks, and updates to the settings store.
+ *
+ * @returns The Settings screen React element.
+ */
 export default function SettingsScreen() {
   const theme = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -412,6 +417,17 @@ export default function SettingsScreen() {
           description="Show one-tap SQL snippets under the editor."
           value={settings.showQuickActions}
           onValueChange={(value) => updateSettings({ showQuickActions: value })}
+          styles={styles}
+          theme={theme}
+        />
+      </Section>
+
+      <Section title="Feedback" styles={styles}>
+        <SettingRow
+          label="Haptic Feedback"
+          description="Vibrate on query success, errors, and transactions."
+          value={settings.hapticFeedbackEnabled}
+          onValueChange={(value) => updateSettings({ hapticFeedbackEnabled: value })}
           styles={styles}
           theme={theme}
         />
